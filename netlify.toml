@@ -1,0 +1,18 @@
+# https://docs.netlify.com/configure-builds/file-based-configuration
+[build]
+  command = "npm run build"
+  functions = "app/server/lambda"
+  publish = "dist"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

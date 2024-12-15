@@ -1,0 +1,10 @@
+{
+  "extends": ["eslint:recommended", "react-app"],
+  "overrides": [{ "files": ["*.js", "*.jsx"] }],
+  "globals": {
+    "globalThis": "readonly"
+  },
+  "rules": {
+    "react-hooks/exhaustive-deps": "off"
+  }
+}

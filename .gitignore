@@ -1,0 +1,10 @@
+/node_modules
+/dist
+/lambda
+
+.DS_Store
+.idea
+.env
+.netlify
+
+npm-debug.log*
