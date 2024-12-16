@@ -8,25 +8,25 @@ const beatsPerMeasure = 8;
 export function EditorPage() {
     const [isPlaying, setIsPlaying] = useState(false);
     const [force, setForce] = useState(0);
-    const [beat, setBeat] = useState(0);
+    const [beat, setBeat] = useState(-1);
     const [tempo, setTempo] = useState(120);
-
-    const currentBeat = beat > 0 ? beat - 1 : beatsPerMeasure - 1;
 
     const table = useMemo(() => createSequenceTable(notes), []);
     const synths = useMemo(() => createSynths(notes.length), []);
 
     const repeatCallback = useCallbackRef((time) => {
+        const nextBeat = (beat + 1) % beatsPerMeasure;
+
         table.forEach((row, index) => {
             const synth = synths[index];
-            const note = row[beat];
+            const note = row[nextBeat];
 
             if (note.enabled) {
                 synth.triggerAttackRelease(note.note, "8n", time);
             }
         });
 
-        setBeat((b) => (b + 1) % beatsPerMeasure);
+        setBeat(nextBeat);
     });
 
     useEffect(() => {
@@ -64,14 +64,14 @@ export function EditorPage() {
     };
 
     const getCellBackground = (index) => {
-        if (index % beatsPerMeasure === currentBeat) {
+        if (index % beatsPerMeasure === beat) {
             return "gray.1";
         }
         return "";
     };
 
     const getCellTransform = (index, enabled) => {
-        if (enabled && index % beatsPerMeasure === currentBeat) {
+        if (enabled && index % beatsPerMeasure === beat) {
             return "scale(1.2)";
         }
         return "";
@@ -99,7 +99,7 @@ export function EditorPage() {
                     ))}
                 </Grid>
                 <Label mt={2} fontSize={3}>
-                    {currentBeat + 1}
+                    {beat + 1}
                 </Label>
             </Flex>
             <Flex p={2} gap={2} bg="gray.1" borderTop="base" justify="center">
