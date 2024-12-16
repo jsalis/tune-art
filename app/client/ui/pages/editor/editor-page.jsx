@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Grid, Flex, Box, Label, Button, useCallbackRef } from "londo-ui";
+import { Grid, Flex, Box, Label, Button, Slider, useCallbackRef } from "londo-ui";
 import * as Tone from "tone";
 
 const notes = ["F4", "Eb4", "C4", "Bb3", "Ab3", "F3"];
@@ -9,6 +9,7 @@ export function EditorPage() {
     const [isPlaying, setIsPlaying] = useState(false);
     const [force, setForce] = useState(0);
     const [beat, setBeat] = useState(0);
+    const [tempo, setTempo] = useState(120);
 
     const currentBeat = beat > 0 ? beat - 1 : beatsPerMeasure - 1;
 
@@ -35,7 +36,7 @@ export function EditorPage() {
         const transport = Tone.getTransport();
         transport.bpm.value = 120;
 
-        // Execute the callback function every eight note.
+        // Execute the callback function every eight note
         const eventId = transport.scheduleRepeat(repeatCallback, "8n");
 
         return () => transport.cancel(eventId);
@@ -79,14 +80,14 @@ export function EditorPage() {
     return (
         <Grid columns="auto" rows="40px auto 160px" minWidth="512px" height="100vh">
             <Flex bg="gray.1" borderBottom="base" justify="space-between" align="center" />
-            <Flex overflow="hidden" align="center" justify="center">
+            <Flex direction="column" overflow="hidden" align="center" justify="center">
                 <Grid p={2} flex="none" columns={beatsPerMeasure}>
                     {table.flat().map((note, i) => (
                         <Flex key={i} p={2} bg={getCellBackground(i)}>
                             <Box
                                 size={30}
                                 borderRadius="base"
-                                bg={note.enabled ? "primary.base" : "gray.2"}
+                                bg={note.enabled ? "primary.base" : "gray.3"}
                                 onClick={() => toggleNote(i)}
                                 style={{
                                     transform: getCellTransform(i, note.enabled),
@@ -97,11 +98,24 @@ export function EditorPage() {
                         </Flex>
                     ))}
                 </Grid>
+                <Label mt={2} fontSize={3}>
+                    {currentBeat + 1}
+                </Label>
             </Flex>
             <Flex p={2} gap={2} bg="gray.1" borderTop="base" justify="center">
                 <Flex gap={3} direction="column" align="center">
                     <Button onClick={togglePlay}>{isPlaying ? "Stop" : "Play"}</Button>
-                    <Label fontSize={3}>{currentBeat + 1}</Label>
+                    <Slider
+                        width={200}
+                        min={60}
+                        max={360}
+                        value={[tempo]}
+                        onValueChange={([val]) => setTempo(val)}
+                        onChange={([val]) => {
+                            Tone.getTransport().bpm.value = val;
+                        }}
+                    />
+                    <Label fontSize={1}>{tempo} BPM</Label>
                 </Flex>
             </Flex>
         </Grid>
