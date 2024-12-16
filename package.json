@@ -6,7 +6,7 @@
     "start": "run-p start-**",
     "start-client": "vite serve --open",
     "start-server": "netlify functions:serve",
-    "build": "run-s clean prisma-generate prisma-migrate build-**",
+    "build": "run-s clean build-**",
     "build-client": "vite build",
     "prisma-generate": "prisma generate",
     "prisma-migrate": "prisma migrate deploy",
