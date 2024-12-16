@@ -69,11 +69,18 @@ export function EditorPage() {
         return "";
     };
 
+    const getCellTransform = (index, enabled) => {
+        if (enabled && index % beatsPerMeasure === currentBeat) {
+            return "scale(1.2)";
+        }
+        return "";
+    };
+
     return (
         <Grid columns="auto" rows="40px auto 160px" minWidth="512px" height="100vh">
             <Flex bg="gray.1" borderBottom="base" justify="space-between" align="center" />
             <Flex overflow="hidden" align="center" justify="center">
-                <Grid p={2} columns={beatsPerMeasure}>
+                <Grid p={2} flex="none" columns={beatsPerMeasure}>
                     {table.flat().map((note, i) => (
                         <Flex key={i} p={2} bg={getCellBackground(i)}>
                             <Box
@@ -81,7 +88,11 @@ export function EditorPage() {
                                 borderRadius="base"
                                 bg={note.enabled ? "primary.base" : "gray.2"}
                                 onClick={() => toggleNote(i)}
-                                cursor="pointer"
+                                style={{
+                                    transform: getCellTransform(i, note.enabled),
+                                    transition: "transform 0.1s",
+                                    cursor: "pointer",
+                                }}
                             />
                         </Flex>
                     ))}
