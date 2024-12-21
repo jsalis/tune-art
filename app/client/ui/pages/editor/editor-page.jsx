@@ -7,24 +7,24 @@ const beatsPerMeasure = 8;
 
 export function EditorPage() {
     const [isPlaying, setIsPlaying] = useState(false);
-    const [force, setForce] = useState(0);
     const [beat, setBeat] = useState(-1);
     const [tempo, setTempo] = useState(120);
 
-    const table = useMemo(() => createSequenceTable(notes), []);
+    const [table, setTable] = useState(() => createSequenceTable(notes, beatsPerMeasure));
     const synths = useMemo(() => createSynths(notes.length), []);
 
     const repeatCallback = useCallbackRef((time) => {
-        const nextBeat = (beat + 1) % beatsPerMeasure;
+        const nextBeat = (beat + 1) % table.width;
 
-        table.forEach((row, index) => {
-            const synth = synths[index];
-            const note = row[nextBeat];
+        for (let i = 0; i < table.height; i++) {
+            const synth = synths[i];
+            const index = i * table.width + nextBeat;
+            const note = table.data[index];
 
             if (note.enabled) {
                 synth.triggerAttackRelease(note.note, "8n", time);
             }
-        });
+        }
 
         setBeat(nextBeat);
     });
@@ -43,12 +43,12 @@ export function EditorPage() {
     }, []);
 
     const toggleNote = (index) => {
-        const i = Math.floor(index / beatsPerMeasure);
-        const j = index % beatsPerMeasure;
-        const note = table[i][j];
+        const dataClone = table.data.slice(0);
+        const note = dataClone[index];
 
-        note.enabled = !note.enabled;
-        setForce((f) => f + 1);
+        dataClone[index] = { ...note, enabled: !note.enabled };
+
+        setTable((t) => ({ ...t, data: dataClone }));
     };
 
     const togglePlay = () => {
@@ -64,14 +64,14 @@ export function EditorPage() {
     };
 
     const getCellBackground = (index) => {
-        if (index % beatsPerMeasure === beat) {
+        if (index % table.width === beat) {
             return "gray.1";
         }
         return "";
     };
 
     const getCellTransform = (index, enabled) => {
-        if (enabled && index % beatsPerMeasure === beat) {
+        if (enabled && index % table.width === beat) {
             return "scale(1.2)";
         }
         return "";
@@ -81,8 +81,8 @@ export function EditorPage() {
         <Grid columns="auto" rows="40px auto 160px" minWidth="512px" height="100vh">
             <Flex bg="gray.1" borderBottom="base" justify="space-between" align="center" />
             <Flex direction="column" overflow="hidden" align="center" justify="center">
-                <Grid p={2} flex="none" columns={beatsPerMeasure}>
-                    {table.flat().map((note, i) => (
+                <Grid p={2} flex="none" columns={table.width}>
+                    {table.data.map((note, i) => (
                         <Flex key={i} p={2} bg={getCellBackground(i)}>
                             <Box
                                 size={30}
@@ -109,6 +109,7 @@ export function EditorPage() {
                         width={200}
                         min={60}
                         max={360}
+                        step={5}
                         value={[tempo]}
                         onValueChange={([val]) => setTempo(val)}
                         onChange={([val]) => {
@@ -133,19 +134,21 @@ const createSynths = (count) => {
     return synths;
 };
 
-const createSequenceTable = (notes) => {
-    const rows = [];
+const createSequenceTable = (notes, beats) => {
+    const data = [];
 
-    for (const note of notes) {
-        const row = [];
-        for (let i = 0; i < beatsPerMeasure; i++) {
-            row.push({
-                note: note,
+    for (let i = 0; i < notes.length; i++) {
+        for (let j = 0; j < beats; j++) {
+            data.push({
+                note: notes[i],
                 enabled: Math.random() < 0.15, // false
             });
         }
-        rows.push(row);
     }
 
-    return rows;
+    return {
+        width: beats,
+        height: notes.length,
+        data,
+    };
 };
