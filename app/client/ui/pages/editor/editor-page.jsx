@@ -1,32 +1,113 @@
-import { useState, useMemo, useEffect } from "react";
-import { Grid, Flex, Box, Label, Button, Slider, useCallbackRef } from "londo-ui";
+import { useState, useRef, useMemo, useEffect } from "react";
+import { Grid, Flex, Box, Label, Button, Slider, ColorSwatch, useCallbackRef } from "londo-ui";
+import styled, { css } from "styled-components";
 import * as Tone from "tone";
 
-const notes = ["F4", "Eb4", "C4", "Bb3", "Ab3", "F3"];
-const beatsPerMeasure = 8;
+import { useCanvasConfig, setPrimaryColor, setSecondaryColor } from "../../../stores";
+import { usePanner } from "../../../hooks";
+import { hexToRgb, rgbToHex } from "../../../utils/color-util";
+import { getPointsBetween } from "../../../utils/vec2-util";
+
+const CANVAS_WIDTH = 48;
+const CANVAS_HEIGHT = 32;
+const PIXEL_SIZE = 16;
+
+const COLOR_TO_NOTE_MAP = {
+    "#fbe64d": "C3",
+    "#b4fa50": "D3",
+    "#67e645": "E3",
+    "#53ad8e": "F3",
+    "#57c6ea": "G3",
+    "#205bda": "A3",
+    "#6e64eb": "B3",
+    "#af3eee": "C4",
+    "#ea53da": "D4",
+    "#ea3223": "E4",
+    "#e69423": "F4",
+    "#f6c2ab": "G4",
+    "#929292": "A4",
+    "#c0c0c0": "B4",
+    "#ebebeb": "C5",
+};
+
+const Canvas = styled.canvas`
+    background-image: ${(p) => {
+        const c1 = p.theme.colors.gray[1];
+        const c2 = p.theme.colors.gray[3];
+        return css`repeating-linear-gradient(45deg, ${c1}, ${c1} 11.3px, ${c2} 11.3px, ${c2} 22.6px)`;
+    }};
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+`;
+
+const CursorCanvas = styled.canvas`
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    pointer-events: none;
+`;
+
+const GridOverlay = styled.div`
+    width: ${(p) => p.width}px;
+    height: ${(p) => p.height}px;
+    background-size: ${PIXEL_SIZE}px ${PIXEL_SIZE}px;
+    background-position: -1px -1px;
+    background-image: ${(p) =>
+        css`
+            linear-gradient(to right, ${p.theme.colors.gray[4]} 2px, transparent 1px),
+            linear-gradient(to bottom, ${p.theme.colors.gray[4]} 2px, transparent 1px)
+        `};
+    opacity: 0.6;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    pointer-events: none;
+`;
 
 export function EditorPage() {
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [beat, setBeat] = useState(-1);
-    const [tempo, setTempo] = useState(120);
+    const contentRef = useRef(null);
+    const canvas = useRef(null);
+    const cursorCanvas = useRef(null);
+    const shiftRef = useRef(false);
 
-    const [table, setTable] = useState(() => createSequenceTable(notes, beatsPerMeasure));
-    const synths = useMemo(() => createSynths(notes.length), []);
+    const { primaryColor, secondaryColor } = useCanvasConfig();
+    const [playhead, setPlayhead] = useState({ x: -1, y: 0 });
+    const [tempo, setTempo] = useState(120);
+    const [isPlaying, setIsPlaying] = useState(false);
+
+    const [table, setTable] = useState(() => createSequenceTable(CANVAS_WIDTH, CANVAS_HEIGHT));
+    const synths = useMemo(() => createSynths(4), []);
+
+    const width = table.width * PIXEL_SIZE;
+    const height = table.height * PIXEL_SIZE;
 
     const repeatCallback = useCallbackRef((time) => {
-        const nextBeat = (beat + 1) % table.width;
+        const nextPlayhead = { x: playhead.x + 1, y: playhead.y };
 
-        for (let i = 0; i < table.height; i++) {
-            const synth = synths[i];
-            const index = i * table.width + nextBeat;
-            const note = table.data[index];
+        if (nextPlayhead.x >= table.width) {
+            nextPlayhead.x = 0;
+            // nextPlayhead.y += 1;
+        }
 
-            if (note.enabled) {
-                synth.triggerAttackRelease(note.note, "8n", time);
+        const synth = synths[0];
+        const index = getPixelIndex(table, nextPlayhead.x, nextPlayhead.y);
+        const pixel = table.data[index];
+
+        if (pixel.color[3] > 0) {
+            const hex = rgbToHex(...pixel.color);
+            const note = COLOR_TO_NOTE_MAP[hex];
+
+            if (note) {
+                synth.triggerAttackRelease(note, "8n", time);
             }
         }
 
-        setBeat(nextBeat);
+        setPlayhead(nextPlayhead);
     });
 
     useEffect(() => {
@@ -34,7 +115,7 @@ export function EditorPage() {
         Tone.getDestination().volume.rampTo(-10, 0.001);
 
         const transport = Tone.getTransport();
-        transport.bpm.value = 120;
+        transport.bpm.value = tempo;
 
         // Execute the callback function every eight note
         const eventId = transport.scheduleRepeat(repeatCallback, "8n");
@@ -42,14 +123,172 @@ export function EditorPage() {
         return () => transport.cancel(eventId);
     }, []);
 
-    const toggleNote = (index) => {
-        const dataClone = table.data.slice(0);
-        const note = dataClone[index];
+    const panner = usePanner({
+        initAtCenter: true,
+        centerOffset: { x: width / 2, y: height / 2 },
+        onUpdate({ x, y }, scale) {
+            if (contentRef.current) {
+                Object.assign(contentRef.current.style, {
+                    transform: `translate(${x}px, ${y}px) scale(${scale})`,
+                });
+            }
+        },
+    });
 
-        dataClone[index] = { ...note, enabled: !note.enabled };
+    useEffect(() => {
+        const ctx = canvas.current.getContext("2d");
+        const cursorCtx = cursorCanvas.current.getContext("2d");
+        const textureClone = { ...table, data: table.data.slice(0) };
 
-        setTable((t) => ({ ...t, data: dataClone }));
-    };
+        let buttonDown = -1;
+        let lastPosition = null;
+
+        const onKeyChange = (event) => {
+            if (shiftRef.current !== event.shiftKey) {
+                shiftRef.current = event.shiftKey;
+
+                if (lastPosition) {
+                    renderTexture();
+                    renderCursor(lastPosition);
+                }
+            }
+        };
+
+        const onMouseDown = (event) => {
+            event.preventDefault();
+            buttonDown = event.button;
+
+            const pos = getPixelPosition(event);
+            updateAt([pos]);
+            renderTexture();
+        };
+
+        const onMouseMove = (event) => {
+            event.preventDefault();
+            const pos = getPixelPosition(event);
+
+            if (!lastPosition || !isPositionEqual(pos, lastPosition)) {
+                if (lastPosition && buttonDown !== -1) {
+                    const points = getPointsBetween(lastPosition, pos);
+                    updateAt(points);
+                }
+
+                renderTexture();
+                renderCursor(pos);
+                // updatePointer({ position: pos, mouseOver: true });
+                lastPosition = pos;
+            }
+
+            if (buttonDown === 2) {
+                clearCursor();
+            }
+        };
+
+        const onMouseLeave = () => {
+            renderTexture();
+            clearCursor();
+            // updatePointer({ position: [0, 0], mouseOver: false });
+            lastPosition = null;
+        };
+
+        const onMouseUp = (event) => {
+            if (event.buttons === 0) {
+                if (buttonDown !== -1) {
+                    setTable(textureClone);
+                }
+                buttonDown = -1;
+                lastPosition = null;
+            }
+        };
+
+        const isPositionEqual = (a, b) => {
+            return a[0] === b[0] && a[1] === b[1];
+        };
+
+        const getPixelPosition = (event) => {
+            const rect = canvas.current.getBoundingClientRect();
+            const x = Math.floor((event.clientX - rect.x) / (PIXEL_SIZE * panner.scale.current));
+            const y = Math.floor((event.clientY - rect.y) / (PIXEL_SIZE * panner.scale.current));
+            return [x, y];
+        };
+
+        const updateAt = (points) => {
+            if (buttonDown === 0) {
+                const { primaryColor, secondaryColor } = useCanvasConfig.getState();
+                const activeColor = shiftRef.current ? secondaryColor : primaryColor;
+                const rgb = activeColor ? hexToRgb(activeColor) : null;
+                const rgba = activeColor ? [rgb.r, rgb.g, rgb.b, 255] : [0, 0, 0, 0];
+                setAllPixelColors(canvas.current, textureClone, points, rgba);
+            }
+        };
+
+        const renderTexture = () => {
+            ctx.clearRect(0, 0, canvas.current.width, canvas.current.height);
+            const { data, width, height } = textureClone;
+
+            for (let px = 0; px < width; px++) {
+                for (let py = 0; py < height; py++) {
+                    const i = getPixelIndex(textureClone, px, py);
+                    const r = data[i].color[0];
+                    const g = data[i].color[1];
+                    const b = data[i].color[2];
+                    const a = data[i].color[3];
+                    ctx.fillStyle = `rgba(${r},${g},${b},${a / 255})`;
+
+                    const x = px * PIXEL_SIZE;
+                    const y = py * PIXEL_SIZE;
+                    ctx.fillRect(x, y, PIXEL_SIZE, PIXEL_SIZE);
+                }
+            }
+        };
+
+        const renderCursor = ([px, py]) => {
+            cursorCtx.clearRect(0, 0, cursorCanvas.current.width, cursorCanvas.current.height);
+
+            if (
+                px >= 0 &&
+                py >= 0 &&
+                px < canvas.current.width / PIXEL_SIZE &&
+                py < canvas.current.height / PIXEL_SIZE
+            ) {
+                const { width, height } = textureClone;
+                const { primaryColor, secondaryColor } = useCanvasConfig.getState();
+                const activeColor = shiftRef.current ? secondaryColor : primaryColor;
+
+                if (!activeColor) {
+                    return;
+                }
+
+                cursorCtx.fillStyle = activeColor;
+
+                const x = (px % width) * PIXEL_SIZE;
+                const y = (py % height) * PIXEL_SIZE;
+                cursorCtx.fillRect(x, y, PIXEL_SIZE, PIXEL_SIZE);
+            }
+        };
+
+        const clearCursor = () => {
+            cursorCtx.clearRect(0, 0, cursorCanvas.current.width, cursorCanvas.current.height);
+        };
+
+        renderTexture();
+        panner.ref.current.addEventListener("mousedown", onMouseDown);
+        panner.ref.current.addEventListener("mousemove", onMouseMove);
+        panner.ref.current.addEventListener("mouseleave", onMouseLeave);
+        document.addEventListener("mouseenter", onMouseUp);
+        window.addEventListener("mouseup", onMouseUp);
+        document.addEventListener("keydown", onKeyChange);
+        document.addEventListener("keyup", onKeyChange);
+        return () => {
+            panner.ref.current?.removeEventListener("mousedown", onMouseDown);
+            panner.ref.current?.removeEventListener("mousemove", onMouseMove);
+            panner.ref.current?.removeEventListener("mouseleave", onMouseLeave);
+            document.removeEventListener("mouseenter", onMouseUp);
+            window.removeEventListener("mouseup", onMouseUp);
+            document.removeEventListener("keydown", onKeyChange);
+            document.removeEventListener("keyup", onKeyChange);
+        };
+    }, [table.data]);
 
     const togglePlay = () => {
         const transport = Tone.getTransport();
@@ -63,48 +302,57 @@ export function EditorPage() {
         }
     };
 
-    const getCellBackground = (index) => {
-        if (index % table.width === beat) {
-            return "gray.1";
+    const onSwatchClick = (event, color) => {
+        event.preventDefault();
+
+        if (event.button === 0) {
+            setPrimaryColor(color);
+        } else if (event.button === 2) {
+            setSecondaryColor(secondaryColor === color ? null : color);
         }
-        return "";
     };
 
-    const getCellTransform = (index, enabled) => {
-        if (enabled && index % table.width === beat) {
-            return "scale(1.2)";
-        }
-        return "";
+    const onContextMenu = (event) => {
+        event.preventDefault();
     };
 
     return (
         <Grid columns="auto" rows="40px auto 160px" minWidth="512px" height="100vh">
-            <Flex bg="gray.1" borderBottom="base" justify="space-between" align="center" />
-            <Flex direction="column" overflow="hidden" align="center" justify="center">
-                <Grid p={2} flex="none" columns={table.width}>
-                    {table.data.map((note, i) => (
-                        <Flex key={i} p={2} bg={getCellBackground(i)}>
-                            <Box
-                                size={30}
-                                borderRadius="base"
-                                bg={note.enabled ? "primary.base" : "gray.3"}
-                                onClick={() => toggleNote(i)}
-                                style={{
-                                    transform: getCellTransform(i, note.enabled),
-                                    transition: "transform 0.1s",
-                                    cursor: "pointer",
-                                }}
-                            />
-                        </Flex>
-                    ))}
-                </Grid>
-                <Label mt={2} fontSize={3}>
-                    {beat + 1}
+            <Flex bg="gray.1" borderBottom="base" justify="center" align="center">
+                <Label fontSize={3}>
+                    {playhead.x},{playhead.y}
                 </Label>
+            </Flex>
+            <Flex
+                ref={panner.ref}
+                position="relative"
+                overflow="hidden"
+                cursor="crosshair"
+                onContextMenu={onContextMenu}
+            >
+                <Box ref={contentRef} position="absolute" userSelect="none">
+                    <Canvas ref={canvas} width={width} height={height} />
+                    <CursorCanvas ref={cursorCanvas} width={width} height={height} />
+                    <GridOverlay width={width} height={height} />
+                </Box>
             </Flex>
             <Flex p={2} gap={2} bg="gray.1" borderTop="base" justify="center">
                 <Flex gap={3} direction="column" align="center">
                     <Button onClick={togglePlay}>{isPlaying ? "Stop" : "Play"}</Button>
+                    <Flex gap={1} wrap="wrap">
+                        {Object.keys(COLOR_TO_NOTE_MAP).map((color) => (
+                            <ColorSwatch
+                                key={color}
+                                color={color}
+                                primary={color === primaryColor}
+                                secondary={color === secondaryColor}
+                                onClick={(e) => onSwatchClick(e, color)}
+                                onContextMenu={(e) => onSwatchClick(e, color)}
+                                size={25}
+                                cursor="pointer"
+                            />
+                        ))}
+                    </Flex>
                     <Slider
                         width={200}
                         min={60}
@@ -116,14 +364,16 @@ export function EditorPage() {
                             Tone.getTransport().bpm.value = val;
                         }}
                     />
-                    <Label fontSize={1}>{tempo} BPM</Label>
+                    <Label mt={-2} fontSize={1}>
+                        {tempo} BPM
+                    </Label>
                 </Flex>
             </Flex>
         </Grid>
     );
 }
 
-const createSynths = (count) => {
+function createSynths(count) {
     const synths = [];
 
     for (let i = 0; i < count; i++) {
@@ -132,23 +382,49 @@ const createSynths = (count) => {
     }
 
     return synths;
-};
+}
 
-const createSequenceTable = (notes, beats) => {
+function createSequenceTable(width, height) {
     const data = [];
+    const colors = Object.keys(COLOR_TO_NOTE_MAP);
 
-    for (let i = 0; i < notes.length; i++) {
-        for (let j = 0; j < beats; j++) {
+    for (let i = 0; i < height; i++) {
+        for (let j = 0; j < width; j++) {
+            const hex = colors[Math.floor(Math.random() * colors.length)];
+            const rgb = hexToRgb(hex);
             data.push({
-                note: notes[i],
-                enabled: Math.random() < 0.15, // false
+                color: [rgb.r, rgb.g, rgb.b, Math.random() < 0 ? 255 : 0],
             });
         }
     }
 
-    return {
-        width: beats,
-        height: notes.length,
-        data,
+    return { width, height, data };
+}
+
+function getPixelIndex(image, px, py) {
+    const { width } = image;
+    return px + py * width;
+}
+
+function setPixelColor(image, x, y, rgba, dir) {
+    const { data } = image;
+    const i = getPixelIndex(image, x, y, dir);
+    data[i] = {
+        ...data[i],
+        color: [...rgba],
     };
-};
+}
+
+function setAllPixelColors(canvas, image, points, rgba) {
+    const cw = canvas.width / PIXEL_SIZE;
+    const ch = canvas.height / PIXEL_SIZE;
+    const { width, height } = image;
+
+    for (let i = 0; i < points.length; i++) {
+        const [x, y] = points[i];
+
+        if (x >= 0 && y >= 0 && x < cw && y < ch) {
+            setPixelColor(image, x % width, y % height, rgba);
+        }
+    }
+}
