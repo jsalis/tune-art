@@ -15,18 +15,28 @@ const PIXEL_SIZE = 16;
 
 const COLOR_TO_NOTE_MAP = {
     "#fbe64d": "C3",
+    "#92922d": "C#3",
     "#b4fa50": "D3",
+    "#378223": "D#3",
     "#67e645": "E3",
     "#53ad8e": "F3",
+    "#2a685a": "F#3",
     "#57c6ea": "G3",
+    "#000c99": "G#3",
     "#205bda": "A3",
+    "#4b0f78": "A#3",
     "#6e64eb": "B3",
     "#af3eee": "C4",
+    "#781976": "C#4",
     "#ea53da": "D4",
+    "#6e140a": "D#4",
     "#ea3223": "E4",
     "#e69423": "F4",
+    "#824316": "F#4",
     "#f6c2ab": "G4",
+    "#8f7b5d": "G#4",
     "#929292": "A4",
+    "#5b5b5b": "A#4",
     "#c0c0c0": "B4",
     "#ebebeb": "C5",
 };
@@ -336,7 +346,7 @@ export function EditorPage() {
     };
 
     return (
-        <Grid columns="auto" rows="40px auto 160px" minWidth="512px" height="100vh">
+        <Grid columns="auto" rows="40px auto 200px" minWidth="512px" height="100vh">
             <Flex bg="gray.1" borderBottom="base" justify="center" align="center"></Flex>
             <Flex
                 ref={panner.ref}
@@ -372,18 +382,48 @@ export function EditorPage() {
             <Flex p={2} gap={2} bg="gray.1" borderTop="base" justify="center">
                 <Flex gap={3} direction="column" align="center">
                     <Button onClick={togglePlay}>{isPlaying ? "Stop" : "Play"}</Button>
-                    <Flex gap={1} wrap="wrap">
-                        {Object.keys(COLOR_TO_NOTE_MAP).map((color) => (
-                            <ColorSwatch
-                                key={color}
-                                color={color}
-                                primary={color === primaryColor}
-                                secondary={color === secondaryColor}
-                                onClick={(e) => onSwatchClick(e, color)}
-                                onContextMenu={(e) => onSwatchClick(e, color)}
-                                size={25}
-                                cursor="pointer"
-                            />
+                    <Flex pt={36} wrap="wrap">
+                        {Object.entries(COLOR_TO_NOTE_MAP).map(([color, note], i) => (
+                            <Flex
+                                position="relative"
+                                size={note.includes("#") ? 0 : 32}
+                                mr={
+                                    note.includes("#") ||
+                                    i === Object.keys(COLOR_TO_NOTE_MAP).length - 1
+                                        ? 0
+                                        : 1
+                                }
+                            >
+                                <Box
+                                    position="absolute"
+                                    left={note.includes("#") ? "-16px" : ""}
+                                    bottom={note.includes("#") ? "4px" : ""}
+                                >
+                                    <ColorSwatch
+                                        key={color}
+                                        color={color}
+                                        primary={color === primaryColor}
+                                        secondary={color === secondaryColor}
+                                        onClick={(e) => onSwatchClick(e, color)}
+                                        onContextMenu={(e) => onSwatchClick(e, color)}
+                                        size={32}
+                                        cursor="pointer"
+                                    >
+                                        <Flex
+                                            width="100%"
+                                            height="100%"
+                                            justify="center"
+                                            align="center"
+                                            color="black"
+                                            fontSize={0}
+                                        >
+                                            {note.includes("#")
+                                                ? note.substring(0, 2)
+                                                : note.substring(0, 1)}
+                                        </Flex>
+                                    </ColorSwatch>
+                                </Box>
+                            </Flex>
                         ))}
                     </Flex>
                     <Slider
