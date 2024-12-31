@@ -6,6 +6,7 @@ import * as Tone from "tone";
 import { useCanvasConfig, setPrimaryColor, setSecondaryColor } from "../../../stores";
 import { usePanner } from "../../../hooks";
 import { hexToRgb, rgbToHex } from "../../../utils/color-util";
+import { wrap } from "../../../utils/math-util";
 import { getPointsBetween } from "../../../utils/vec2-util";
 
 const CANVAS_WIDTH = 48;
@@ -52,6 +53,13 @@ const CursorCanvas = styled.canvas`
     pointer-events: none;
 `;
 
+const InstrumentOverlay = styled.div`
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    pointer-events: none;
+`;
+
 const GridOverlay = styled.div`
     width: ${(p) => p.width}px;
     height: ${(p) => p.height}px;
@@ -76,9 +84,15 @@ export function EditorPage() {
     const shiftRef = useRef(false);
 
     const { primaryColor, secondaryColor } = useCanvasConfig();
-    const [playhead, setPlayhead] = useState({ x: -1, y: 0 });
     const [tempo, setTempo] = useState(120);
     const [isPlaying, setIsPlaying] = useState(false);
+
+    const [playheads, setPlayheads] = useState([
+        { x: 0, y: 0, dx: 1, dy: 0 },
+        { x: 0, y: 31, dx: 0, dy: -1 },
+        { x: 47, y: 31, dx: -1, dy: 0 },
+        { x: 47, y: 0, dx: 0, dy: 1 },
+    ]);
 
     const [table, setTable] = useState(() => createSequenceTable(CANVAS_WIDTH, CANVAS_HEIGHT));
     const synths = useMemo(() => createSynths(4), []);
@@ -86,28 +100,33 @@ export function EditorPage() {
     const width = table.width * PIXEL_SIZE;
     const height = table.height * PIXEL_SIZE;
 
+    const transitionSec = useMemo(() => {
+        return 1 / ((tempo * 2) / 60);
+    }, [tempo]);
+
     const repeatCallback = useCallbackRef((time) => {
-        const nextPlayhead = { x: playhead.x + 1, y: playhead.y };
+        const nextPlayheads = playheads.map((p) => ({
+            ...p,
+            x: wrap(p.x + p.dx, 0, table.width - 1),
+            y: wrap(p.y + p.dy, 0, table.height - 1),
+        }));
 
-        if (nextPlayhead.x >= table.width) {
-            nextPlayhead.x = 0;
-            // nextPlayhead.y += 1;
-        }
+        nextPlayheads.forEach((p, i) => {
+            const synth = synths[i];
+            const index = getPixelIndex(table, p.x, p.y);
+            const pixel = table.data[index];
 
-        const synth = synths[0];
-        const index = getPixelIndex(table, nextPlayhead.x, nextPlayhead.y);
-        const pixel = table.data[index];
+            if (pixel.color[3] > 0) {
+                const hex = rgbToHex(...pixel.color);
+                const note = COLOR_TO_NOTE_MAP[hex];
 
-        if (pixel.color[3] > 0) {
-            const hex = rgbToHex(...pixel.color);
-            const note = COLOR_TO_NOTE_MAP[hex];
-
-            if (note) {
-                synth.triggerAttackRelease(note, "8n", time);
+                if (note) {
+                    synth.triggerAttackRelease(note, "8n", time);
+                }
             }
-        }
+        });
 
-        setPlayhead(nextPlayhead);
+        setPlayheads(nextPlayheads);
     });
 
     useEffect(() => {
@@ -318,11 +337,7 @@ export function EditorPage() {
 
     return (
         <Grid columns="auto" rows="40px auto 160px" minWidth="512px" height="100vh">
-            <Flex bg="gray.1" borderBottom="base" justify="center" align="center">
-                <Label fontSize={3}>
-                    {playhead.x},{playhead.y}
-                </Label>
-            </Flex>
+            <Flex bg="gray.1" borderBottom="base" justify="center" align="center"></Flex>
             <Flex
                 ref={panner.ref}
                 position="relative"
@@ -334,6 +349,24 @@ export function EditorPage() {
                     <Canvas ref={canvas} width={width} height={height} />
                     <CursorCanvas ref={cursorCanvas} width={width} height={height} />
                     <GridOverlay width={width} height={height} />
+                    <InstrumentOverlay width={width} height={height}>
+                        {playheads.map((p, i) => (
+                            <Box
+                                key={i}
+                                size={PIXEL_SIZE / 2}
+                                bg="white"
+                                border="1px solid black"
+                                borderRadius="100%"
+                                position="absolute"
+                                style={{
+                                    left: p.x * PIXEL_SIZE,
+                                    top: p.y * PIXEL_SIZE,
+                                    transform: "translate(50%, 50%)",
+                                    transition: `left ${transitionSec}s linear, top ${transitionSec}s linear`,
+                                }}
+                            />
+                        ))}
+                    </InstrumentOverlay>
                 </Box>
             </Flex>
             <Flex p={2} gap={2} bg="gray.1" borderTop="base" justify="center">
@@ -375,9 +408,10 @@ export function EditorPage() {
 
 function createSynths(count) {
     const synths = [];
+    const types = ["square8", "sine8", "triangle8", "sawtooth8"];
 
     for (let i = 0; i < count; i++) {
-        const synth = new Tone.Synth({ oscillator: { type: "square8" } }).toDestination();
+        const synth = new Tone.Synth({ oscillator: { type: types[i] } }).toDestination();
         synths.push(synth);
     }
 
