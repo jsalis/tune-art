@@ -339,6 +339,9 @@ export function EditorPage() {
         } else if (event.button === 2) {
             setSecondaryColor(secondaryColor === color ? null : color);
         }
+
+        const note = COLOR_TO_NOTE_MAP[color];
+        synths[0].triggerAttackRelease(note, "8n");
     };
 
     const onContextMenu = (event) => {
@@ -416,6 +419,7 @@ export function EditorPage() {
                                             align="center"
                                             color="black"
                                             fontSize={0}
+                                            userSelect="none"
                                         >
                                             {note.includes("#")
                                                 ? note.substring(0, 2)
@@ -448,10 +452,9 @@ export function EditorPage() {
 
 function createSynths(count) {
     const synths = [];
-    const types = ["square8", "sine8", "triangle8", "sawtooth8"];
 
     for (let i = 0; i < count; i++) {
-        const synth = new Tone.Synth({ oscillator: { type: types[i] } }).toDestination();
+        const synth = new Tone.Synth({ oscillator: { type: "square8" } }).toDestination();
         synths.push(synth);
     }
 
