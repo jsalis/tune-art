@@ -412,19 +412,9 @@ export function EditorPage() {
                                         size={32}
                                         cursor="pointer"
                                     >
-                                        <Flex
-                                            width="100%"
-                                            height="100%"
-                                            justify="center"
-                                            align="center"
-                                            color="black"
-                                            fontSize={0}
-                                            userSelect="none"
-                                        >
-                                            {note.includes("#")
-                                                ? note.substring(0, 2)
-                                                : note.substring(0, 1)}
-                                        </Flex>
+                                        {note.includes("#")
+                                            ? note.substring(0, 2)
+                                            : note.substring(0, 1)}
                                     </ColorSwatch>
                                 </Box>
                             </Flex>
