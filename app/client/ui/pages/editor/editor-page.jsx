@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from "react";
-import { Grid, Flex, Box, Label, Button, Slider, ColorSwatch, useCallbackRef } from "londo-ui";
+import { Grid, Flex, Box, Label, Button, IconButton, Slider, ColorSwatch, useCallbackRef } from "londo-ui";
 import styled, { css, keyframes } from "styled-components";
 import * as Tone from "tone";
 
@@ -147,13 +147,19 @@ export function EditorPage() {
 
     const { primaryColor, secondaryColor, currentModifier } = useCanvasConfig();
     const [tempo, setTempo] = useState(120);
-    const [isPlaying, setIsPlaying] = useState(false);
 
     const [playheads, setPlayheads] = useState([
         { x: 0, y: 0, dx: 1, dy: 0 },
         { x: 0, y: 31, dx: 0, dy: -1 },
         { x: 47, y: 31, dx: -1, dy: 0 },
         { x: 47, y: 0, dx: 0, dy: 1 },
+    ]);
+
+    const [instruments, setInstruments] = useState([
+        { playing: false },
+        { playing: false },
+        { playing: false },
+        { playing: false },
     ]);
 
     const [table, setTable] = useState(() => createSequenceTable(CANVAS_WIDTH, CANVAS_HEIGHT));
@@ -167,10 +173,15 @@ export function EditorPage() {
     }, [tempo]);
 
     const repeatCallback = useCallbackRef((time) => {
-        const nextPlayheads = playheads.map((p) => {
+        const nextPlayheads = playheads.map((p, i) => {
+            if (!instruments[i].playing) {
+                return p;
+            }
+
             const index = getPixelIndex(table, p.x, p.y);
             const { mod } = table.data[index];
             const dir = mod ? MOD_FUNC[mod][`${p.dx},${p.dy}`] : { x: p.dx, y: p.dy };
+
             return {
                 ...p,
                 x: wrap(p.x + dir.x, 0, table.width - 1),
@@ -181,6 +192,10 @@ export function EditorPage() {
         });
 
         nextPlayheads.forEach((p, i) => {
+            if (!instruments[i].playing) {
+                return;
+            }
+
             const synth = synths[i];
             const index = getPixelIndex(table, p.x, p.y);
             const pixel = table.data[index];
@@ -389,16 +404,42 @@ export function EditorPage() {
         };
     }, [table.data]);
 
-    const togglePlay = () => {
+    useEffect(() => {
         const transport = Tone.getTransport();
+        const isPlaying = instruments.some((s) => s.playing);
 
-        if (isPlaying) {
-            transport.stop();
-            setIsPlaying(false);
-        } else {
+        if (isPlaying && transport.state === "stopped") {
             transport.start();
-            setIsPlaying(true);
+        } else if (!isPlaying && transport.state === "started") {
+            transport.stop();
         }
+    }, [instruments]);
+
+    const onInstrumentToggle = (index) => {
+        setInstruments((prevInstruments) => {
+            return prevInstruments.map((s, i) => ({
+                ...s,
+                playing: i === index ? !s.playing : s.playing,
+            }));
+        });
+    };
+
+    const onStopInstruments = () => {
+        setInstruments((prevInstruments) => {
+            return prevInstruments.map((s, i) => ({
+                ...s,
+                playing: false,
+            }));
+        });
+    };
+
+    const onStartInstruments = () => {
+        setInstruments((prevInstruments) => {
+            return prevInstruments.map((s, i) => ({
+                ...s,
+                playing: true,
+            }));
+        });
     };
 
     const onSwatchClick = (event, color) => {
@@ -460,10 +501,22 @@ export function EditorPage() {
             </Flex>
             <Flex p={2} gap={2} bg="gray.1" borderTop="base" justify="center">
                 <Flex gap={3} direction="column" align="center">
-                    <Button onClick={togglePlay}>{isPlaying ? "Stop" : "Play"}</Button>
+                    <Flex gap={2}>
+                        <Button onClick={onStopInstruments}>Stop</Button>
+                        {instruments.map((s, i) => (
+                            <IconButton
+                                key={i}
+                                icon={<>{i + 1}</>}
+                                variant={s.playing ? "primary" : "default"}
+                                onClick={() => onInstrumentToggle(i)}
+                            />
+                        ))}
+                        <Button onClick={onStartInstruments}>Go</Button>
+                    </Flex>
                     <Flex pt={36}>
-                        {Object.entries(COLOR_TO_NOTE_MAP).map(([color, note], i) => (
+                        {Object.entries(COLOR_TO_NOTE_MAP).map(([color, note]) => (
                             <Flex
+                                key={note}
                                 position="relative"
                                 size={note.includes("#") ? 0 : 32}
                                 mr={note.includes("#") ? 0 : 1}
@@ -474,7 +527,6 @@ export function EditorPage() {
                                     bottom={note.includes("#") ? "4px" : ""}
                                 >
                                     <ColorSwatch
-                                        key={color}
                                         color={color}
                                         primary={color === primaryColor}
                                         secondary={color === secondaryColor}
