@@ -163,7 +163,7 @@ export function EditorPage() {
     ]);
 
     const [table, setTable] = useState(() => createSequenceTable(CANVAS_WIDTH, CANVAS_HEIGHT));
-    const synths = useMemo(() => createSynths(4), []);
+    const synths = useMemo(() => createSynths(5), []);
 
     const width = table.width * PIXEL_SIZE;
     const height = table.height * PIXEL_SIZE;
@@ -452,7 +452,7 @@ export function EditorPage() {
         }
 
         const note = COLOR_TO_NOTE_MAP[color];
-        synths[0].triggerAttackRelease(note, "8n");
+        synths.at(-1).triggerAttackRelease(note, "8n");
     };
 
     const onModifierClick = (event, mod) => {
