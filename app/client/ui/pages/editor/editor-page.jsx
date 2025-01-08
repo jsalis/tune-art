@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { Grid, Flex, Box, Label, Button, Slider, ColorSwatch, useCallbackRef } from "londo-ui";
-import styled, { css } from "styled-components";
+import styled, { css, keyframes } from "styled-components";
 import * as Tone from "tone";
 
 import { useCanvasConfig, setPrimaryColor, setSecondaryColor } from "../../../stores";
@@ -40,6 +40,59 @@ const COLOR_TO_NOTE_MAP = {
     "#c0c0c0": "B4",
     "#ebebeb": "C5",
 };
+
+const MOD_TYPE = {
+    NONE: 0,
+    BOUNCE: 1,
+    LEFT: 2,
+    RIGHT: 3,
+};
+
+const MOD_TYPE_TO_CHAR = {
+    [MOD_TYPE.BOUNCE]: "X",
+    [MOD_TYPE.LEFT]: "L",
+    [MOD_TYPE.RIGHT]: "R",
+};
+
+const MOD_FUNC = {
+    [MOD_TYPE.BOUNCE]: {
+        "1,0": { x: -1, y: 0 },
+        "0,1": { x: 0, y: -1 },
+        "-1,0": { x: 1, y: 0 },
+        "0,-1": { x: 0, y: 1 },
+    },
+    [MOD_TYPE.LEFT]: {
+        "1,0": { x: 0, y: -1 },
+        "0,1": { x: 1, y: 0 },
+        "-1,0": { x: 0, y: 1 },
+        "0,-1": { x: -1, y: 0 },
+    },
+    [MOD_TYPE.RIGHT]: {
+        "1,0": { x: 0, y: 1 },
+        "0,1": { x: -1, y: 0 },
+        "-1,0": { x: 0, y: -1 },
+        "0,-1": { x: 1, y: 0 },
+    },
+};
+
+const pulse = keyframes`
+    0% {
+        transform: translate(50%, 50%) scale(0.8);
+    }
+    50% {
+        transform: translate(50%, 50%) scale(1.2);
+    }
+    100% {
+        transform: translate(50%, 50%) scale(0.8);
+    }
+`;
+
+const Playhead = styled(Box)`
+    background: red;
+    border: 1px solid black;
+    border-radius: 100%;
+    animation: ${pulse} 1s infinite ease-in-out;
+`;
 
 const Canvas = styled.canvas`
     background-image: ${(p) => {
@@ -115,11 +168,19 @@ export function EditorPage() {
     }, [tempo]);
 
     const repeatCallback = useCallbackRef((time) => {
-        const nextPlayheads = playheads.map((p) => ({
-            ...p,
-            x: wrap(p.x + p.dx, 0, table.width - 1),
-            y: wrap(p.y + p.dy, 0, table.height - 1),
-        }));
+        const nextPlayheads = playheads.map((p) => {
+            const index = getPixelIndex(table, p.x, p.y);
+            const { mod } = table.data[index];
+            const dir =
+                mod === MOD_TYPE.NONE ? { x: p.dx, y: p.dy } : MOD_FUNC[mod][`${p.dx},${p.dy}`];
+            return {
+                ...p,
+                x: wrap(p.x + dir.x, 0, table.width - 1),
+                y: wrap(p.y + dir.y, 0, table.height - 1),
+                dx: dir.x,
+                dy: dir.y,
+            };
+        });
 
         nextPlayheads.forEach((p, i) => {
             const synth = synths[i];
@@ -258,15 +319,19 @@ export function EditorPage() {
             for (let px = 0; px < width; px++) {
                 for (let py = 0; py < height; py++) {
                     const i = getPixelIndex(textureClone, px, py);
-                    const r = data[i].color[0];
-                    const g = data[i].color[1];
-                    const b = data[i].color[2];
-                    const a = data[i].color[3];
+                    const { color, mod } = data[i];
+                    const [r, g, b, a] = color;
                     ctx.fillStyle = `rgba(${r},${g},${b},${a / 255})`;
 
                     const x = px * PIXEL_SIZE;
                     const y = py * PIXEL_SIZE;
                     ctx.fillRect(x, y, PIXEL_SIZE, PIXEL_SIZE);
+
+                    if (mod !== MOD_TYPE.NONE) {
+                        ctx.fillStyle = "rgba(255,255,255,0.6)";
+                        ctx.font = "12px monospace";
+                        ctx.fillText(MOD_TYPE_TO_CHAR[mod], x + 4, y + 12);
+                    }
                 }
             }
         };
@@ -364,17 +429,13 @@ export function EditorPage() {
                     <GridOverlay width={width} height={height} />
                     <InstrumentOverlay width={width} height={height}>
                         {playheads.map((p, i) => (
-                            <Box
+                            <Playhead
                                 key={i}
                                 size={PIXEL_SIZE / 2}
-                                bg="white"
-                                border="1px solid black"
-                                borderRadius="100%"
                                 position="absolute"
                                 style={{
                                     left: p.x * PIXEL_SIZE,
                                     top: p.y * PIXEL_SIZE,
-                                    transform: "translate(50%, 50%)",
                                     transition: `left ${transitionSec}s linear, top ${transitionSec}s linear`,
                                 }}
                             />
@@ -385,17 +446,12 @@ export function EditorPage() {
             <Flex p={2} gap={2} bg="gray.1" borderTop="base" justify="center">
                 <Flex gap={3} direction="column" align="center">
                     <Button onClick={togglePlay}>{isPlaying ? "Stop" : "Play"}</Button>
-                    <Flex pt={36} wrap="wrap">
+                    <Flex pt={36}>
                         {Object.entries(COLOR_TO_NOTE_MAP).map(([color, note], i) => (
                             <Flex
                                 position="relative"
                                 size={note.includes("#") ? 0 : 32}
-                                mr={
-                                    note.includes("#") ||
-                                    i === Object.keys(COLOR_TO_NOTE_MAP).length - 1
-                                        ? 0
-                                        : 1
-                                }
+                                mr={note.includes("#") ? 0 : 1}
                             >
                                 <Box
                                     position="absolute"
@@ -419,6 +475,17 @@ export function EditorPage() {
                                 </Box>
                             </Flex>
                         ))}
+                        <Flex gap={1} hidden>
+                            <ColorSwatch color="#ffffff" size={32} cursor="pointer">
+                                L
+                            </ColorSwatch>
+                            <ColorSwatch color="#ffffff" size={32} cursor="pointer">
+                                R
+                            </ColorSwatch>
+                            <ColorSwatch color="#ffffff" size={32} cursor="pointer">
+                                X
+                            </ColorSwatch>
+                        </Flex>
                     </Flex>
                     <Slider
                         width={200}
@@ -460,7 +527,15 @@ function createSequenceTable(width, height) {
             const hex = colors[Math.floor(Math.random() * colors.length)];
             const rgb = hexToRgb(hex);
             data.push({
-                color: [rgb.r, rgb.g, rgb.b, Math.random() < 0 ? 255 : 0],
+                color: [rgb.r, rgb.g, rgb.b, Math.random() < 0.1 ? 255 : 0],
+                mod:
+                    Math.random() < 0.05
+                        ? MOD_TYPE.BOUNCE
+                        : Math.random() < 0.05
+                          ? MOD_TYPE.LEFT
+                          : Math.random() < 0.05
+                            ? MOD_TYPE.RIGHT
+                            : MOD_TYPE.NONE,
             });
         }
     }
