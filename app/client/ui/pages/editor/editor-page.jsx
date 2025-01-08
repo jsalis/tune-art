@@ -3,7 +3,7 @@ import { Grid, Flex, Box, Label, Button, Slider, ColorSwatch, useCallbackRef } f
 import styled, { css, keyframes } from "styled-components";
 import * as Tone from "tone";
 
-import { useCanvasConfig, setPrimaryColor, setSecondaryColor } from "../../../stores";
+import { useCanvasConfig, setPrimaryColor, setSecondaryColor, setCurrentModifier } from "../../../stores";
 import { usePanner } from "../../../hooks";
 import { hexToRgb, rgbToHex } from "../../../utils/color-util";
 import { wrap } from "../../../utils/math-util";
@@ -42,25 +42,18 @@ const COLOR_TO_NOTE_MAP = {
 };
 
 const MOD_TYPE = {
-    NONE: 0,
-    BOUNCE: 1,
-    LEFT: 2,
-    RIGHT: 3,
+    LEFT: 1,
+    RIGHT: 2,
+    BOUNCE: 3,
 };
 
 const MOD_TYPE_TO_CHAR = {
-    [MOD_TYPE.BOUNCE]: "X",
     [MOD_TYPE.LEFT]: "L",
     [MOD_TYPE.RIGHT]: "R",
+    [MOD_TYPE.BOUNCE]: "X",
 };
 
 const MOD_FUNC = {
-    [MOD_TYPE.BOUNCE]: {
-        "1,0": { x: -1, y: 0 },
-        "0,1": { x: 0, y: -1 },
-        "-1,0": { x: 1, y: 0 },
-        "0,-1": { x: 0, y: 1 },
-    },
     [MOD_TYPE.LEFT]: {
         "1,0": { x: 0, y: -1 },
         "0,1": { x: 1, y: 0 },
@@ -72,6 +65,12 @@ const MOD_FUNC = {
         "0,1": { x: -1, y: 0 },
         "-1,0": { x: 0, y: -1 },
         "0,-1": { x: 1, y: 0 },
+    },
+    [MOD_TYPE.BOUNCE]: {
+        "1,0": { x: -1, y: 0 },
+        "0,1": { x: 0, y: -1 },
+        "-1,0": { x: 1, y: 0 },
+        "0,-1": { x: 0, y: 1 },
     },
 };
 
@@ -146,7 +145,7 @@ export function EditorPage() {
     const cursorCanvas = useRef(null);
     const shiftRef = useRef(false);
 
-    const { primaryColor, secondaryColor } = useCanvasConfig();
+    const { primaryColor, secondaryColor, currentModifier } = useCanvasConfig();
     const [tempo, setTempo] = useState(120);
     const [isPlaying, setIsPlaying] = useState(false);
 
@@ -171,8 +170,7 @@ export function EditorPage() {
         const nextPlayheads = playheads.map((p) => {
             const index = getPixelIndex(table, p.x, p.y);
             const { mod } = table.data[index];
-            const dir =
-                mod === MOD_TYPE.NONE ? { x: p.dx, y: p.dy } : MOD_FUNC[mod][`${p.dx},${p.dy}`];
+            const dir = mod ? MOD_FUNC[mod][`${p.dx},${p.dy}`] : { x: p.dx, y: p.dy };
             return {
                 ...p,
                 x: wrap(p.x + dir.x, 0, table.width - 1),
@@ -304,11 +302,12 @@ export function EditorPage() {
 
         const updateAt = (points) => {
             if (buttonDown === 0) {
-                const { primaryColor, secondaryColor } = useCanvasConfig.getState();
+                const { primaryColor, secondaryColor, currentModifier } = useCanvasConfig.getState();
                 const activeColor = shiftRef.current ? secondaryColor : primaryColor;
                 const rgb = activeColor ? hexToRgb(activeColor) : null;
                 const rgba = activeColor ? [rgb.r, rgb.g, rgb.b, 255] : [0, 0, 0, 0];
-                setAllPixelColors(canvas.current, textureClone, points, rgba);
+                const mod = activeColor ? currentModifier : null;
+                setAllPixelColors(canvas.current, textureClone, points, rgba, mod);
             }
         };
 
@@ -327,7 +326,7 @@ export function EditorPage() {
                     const y = py * PIXEL_SIZE;
                     ctx.fillRect(x, y, PIXEL_SIZE, PIXEL_SIZE);
 
-                    if (mod !== MOD_TYPE.NONE) {
+                    if (mod) {
                         ctx.fillStyle = "rgba(255,255,255,0.6)";
                         ctx.font = "12px monospace";
                         ctx.fillText(MOD_TYPE_TO_CHAR[mod], x + 4, y + 12);
@@ -346,7 +345,7 @@ export function EditorPage() {
                 py < canvas.current.height / PIXEL_SIZE
             ) {
                 const { width, height } = textureClone;
-                const { primaryColor, secondaryColor } = useCanvasConfig.getState();
+                const { primaryColor, secondaryColor, currentModifier } = useCanvasConfig.getState();
                 const activeColor = shiftRef.current ? secondaryColor : primaryColor;
 
                 if (!activeColor) {
@@ -358,6 +357,12 @@ export function EditorPage() {
                 const x = (px % width) * PIXEL_SIZE;
                 const y = (py % height) * PIXEL_SIZE;
                 cursorCtx.fillRect(x, y, PIXEL_SIZE, PIXEL_SIZE);
+
+                if (currentModifier) {
+                    cursorCtx.fillStyle = "rgba(255,255,255,0.6)";
+                    cursorCtx.font = "12px monospace";
+                    cursorCtx.fillText(MOD_TYPE_TO_CHAR[currentModifier], x + 4, y + 12);
+                }
             }
         };
 
@@ -407,6 +412,16 @@ export function EditorPage() {
 
         const note = COLOR_TO_NOTE_MAP[color];
         synths[0].triggerAttackRelease(note, "8n");
+    };
+
+    const onModifierClick = (event, mod) => {
+        event.preventDefault();
+
+        if (mod === currentModifier) {
+            setCurrentModifier(null);
+        } else {
+            setCurrentModifier(mod);
+        }
     };
 
     const onContextMenu = (event) => {
@@ -468,23 +483,35 @@ export function EditorPage() {
                                         size={32}
                                         cursor="pointer"
                                     >
-                                        {note.includes("#")
-                                            ? note.substring(0, 2)
-                                            : note.substring(0, 1)}
+                                        {note.includes("#") ? note.substring(0, 2) : note.substring(0, 1)}
                                     </ColorSwatch>
                                 </Box>
                             </Flex>
                         ))}
-                        <Flex gap={1} hidden>
-                            <ColorSwatch color="#ffffff" size={32} cursor="pointer">
-                                L
-                            </ColorSwatch>
-                            <ColorSwatch color="#ffffff" size={32} cursor="pointer">
-                                R
-                            </ColorSwatch>
-                            <ColorSwatch color="#ffffff" size={32} cursor="pointer">
-                                X
-                            </ColorSwatch>
+                        <Box ml={1} mr={2} height={32} borderLeft="base" />
+                        <Flex gap={1} position="relative">
+                            <Flex
+                                position="absolute"
+                                top="-36px"
+                                height="32px"
+                                width="100%"
+                                justify="center"
+                                align="center"
+                            >
+                                <Label>Modifiers</Label>
+                            </Flex>
+                            {Object.entries(MOD_TYPE_TO_CHAR).map(([mod, char]) => (
+                                <ColorSwatch
+                                    key={mod}
+                                    primary={mod === currentModifier}
+                                    onClick={(e) => onModifierClick(e, mod)}
+                                    color="#ffffff"
+                                    size={32}
+                                    cursor="pointer"
+                                >
+                                    {char}
+                                </ColorSwatch>
+                            ))}
                         </Flex>
                     </Flex>
                     <Slider
@@ -527,15 +554,8 @@ function createSequenceTable(width, height) {
             const hex = colors[Math.floor(Math.random() * colors.length)];
             const rgb = hexToRgb(hex);
             data.push({
-                color: [rgb.r, rgb.g, rgb.b, Math.random() < 0.1 ? 255 : 0],
-                mod:
-                    Math.random() < 0.05
-                        ? MOD_TYPE.BOUNCE
-                        : Math.random() < 0.05
-                          ? MOD_TYPE.LEFT
-                          : Math.random() < 0.05
-                            ? MOD_TYPE.RIGHT
-                            : MOD_TYPE.NONE,
+                color: [rgb.r, rgb.g, rgb.b, Math.random() < 0 ? 255 : 0],
+                mod: null,
             });
         }
     }
@@ -548,16 +568,17 @@ function getPixelIndex(image, px, py) {
     return px + py * width;
 }
 
-function setPixelColor(image, x, y, rgba, dir) {
+function setPixelColor(image, x, y, rgba, mod) {
     const { data } = image;
-    const i = getPixelIndex(image, x, y, dir);
+    const i = getPixelIndex(image, x, y);
     data[i] = {
         ...data[i],
         color: [...rgba],
+        mod: mod ?? null,
     };
 }
 
-function setAllPixelColors(canvas, image, points, rgba) {
+function setAllPixelColors(canvas, image, points, rgba, mod) {
     const cw = canvas.width / PIXEL_SIZE;
     const ch = canvas.height / PIXEL_SIZE;
     const { width, height } = image;
@@ -566,7 +587,7 @@ function setAllPixelColors(canvas, image, points, rgba) {
         const [x, y] = points[i];
 
         if (x >= 0 && y >= 0 && x < cw && y < ch) {
-            setPixelColor(image, x % width, y % height, rgba);
+            setPixelColor(image, x % width, y % height, rgba, mod);
         }
     }
 }
