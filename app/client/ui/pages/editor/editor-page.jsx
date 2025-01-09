@@ -150,9 +150,9 @@ export function EditorPage() {
 
     const [playheads, setPlayheads] = useState([
         { x: 0, y: 0, dx: 1, dy: 0 },
-        { x: 0, y: 31, dx: 0, dy: -1 },
-        { x: 47, y: 31, dx: -1, dy: 0 },
-        { x: 47, y: 0, dx: 0, dy: 1 },
+        { x: 0, y: 2, dx: 1, dy: 0 },
+        { x: 0, y: 4, dx: 1, dy: 0 },
+        { x: 0, y: 6, dx: 1, dy: 0 },
     ]);
 
     const [instruments, setInstruments] = useState([
