@@ -156,10 +156,10 @@ export function EditorPage() {
     ]);
 
     const [instruments, setInstruments] = useState([
-        { playing: false },
-        { playing: false },
-        { playing: false },
-        { playing: false },
+        { playing: false, start: { x: 0, y: 0, dx: 1, dy: 0 } },
+        { playing: false, start: { x: 0, y: 2, dx: 1, dy: 0 } },
+        { playing: false, start: { x: 0, y: 4, dx: 1, dy: 0 } },
+        { playing: false, start: { x: 0, y: 6, dx: 1, dy: 0 } },
     ]);
 
     const [table, setTable] = useState(() => createSequenceTable(CANVAS_WIDTH, CANVAS_HEIGHT));
@@ -442,6 +442,15 @@ export function EditorPage() {
         });
     };
 
+    const onRestartInstruments = () => {
+        setPlayheads((prevPlayheads) => {
+            return prevPlayheads.map((p, i) => ({
+                ...p,
+                ...instruments[i].start,
+            }));
+        });
+    };
+
     const onSwatchClick = (event, color) => {
         event.preventDefault();
 
@@ -502,6 +511,7 @@ export function EditorPage() {
             <Flex p={2} gap={2} bg="gray.1" borderTop="base" justify="center">
                 <Flex gap={3} direction="column" align="center">
                     <Flex gap={2}>
+                        <Button onClick={onRestartInstruments}>Restart</Button>
                         <Button onClick={onStopInstruments}>Stop</Button>
                         {instruments.map((s, i) => (
                             <IconButton
