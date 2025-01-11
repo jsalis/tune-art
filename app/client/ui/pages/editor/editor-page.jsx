@@ -3,7 +3,7 @@ import { Grid, Flex, Box, Label, Button, IconButton, Slider, ColorSwatch, useCal
 import styled, { css, keyframes } from "styled-components";
 import * as Tone from "tone";
 
-import { useCanvasConfig, setPrimaryColor, setSecondaryColor, setCurrentModifier } from "../../../stores";
+import { useCanvasConfig, setPrimaryColor, setCurrentModifier } from "../../../stores";
 import { usePanner } from "../../../hooks";
 import { hexToRgb, rgbToHex } from "../../../utils/color-util";
 import { wrap } from "../../../utils/math-util";
@@ -145,7 +145,7 @@ export function EditorPage() {
     const cursorCanvas = useRef(null);
     const shiftRef = useRef(false);
 
-    const { primaryColor, secondaryColor, currentModifier } = useCanvasConfig();
+    const { primaryColor, currentModifier } = useCanvasConfig();
     const [tempo, setTempo] = useState(120);
 
     const [playheads, setPlayheads] = useState([
@@ -278,7 +278,6 @@ export function EditorPage() {
 
                 renderTexture();
                 renderCursor(pos);
-                // updatePointer({ position: pos, mouseOver: true });
                 lastPosition = pos;
             }
 
@@ -290,7 +289,6 @@ export function EditorPage() {
         const onMouseLeave = () => {
             renderTexture();
             clearCursor();
-            // updatePointer({ position: [0, 0], mouseOver: false });
             lastPosition = null;
         };
 
@@ -317,11 +315,10 @@ export function EditorPage() {
 
         const updateAt = (points) => {
             if (buttonDown === 0) {
-                const { primaryColor, secondaryColor, currentModifier } = useCanvasConfig.getState();
-                const activeColor = shiftRef.current ? secondaryColor : primaryColor;
-                const rgb = activeColor ? hexToRgb(activeColor) : null;
-                const rgba = activeColor ? [rgb.r, rgb.g, rgb.b, 255] : [0, 0, 0, 0];
-                const mod = activeColor ? currentModifier : null;
+                const { primaryColor, currentModifier } = useCanvasConfig.getState();
+                const rgb = !shiftRef.current && primaryColor ? hexToRgb(primaryColor) : null;
+                const rgba = rgb ? [rgb.r, rgb.g, rgb.b, 255] : [0, 0, 0, 0];
+                const mod = !shiftRef.current ? currentModifier : null;
                 setAllPixelColors(canvas.current, textureClone, points, rgba, mod);
             }
         };
@@ -360,18 +357,19 @@ export function EditorPage() {
                 py < canvas.current.height / PIXEL_SIZE
             ) {
                 const { width, height } = textureClone;
-                const { primaryColor, secondaryColor, currentModifier } = useCanvasConfig.getState();
-                const activeColor = shiftRef.current ? secondaryColor : primaryColor;
+                const { primaryColor, currentModifier } = useCanvasConfig.getState();
 
-                if (!activeColor) {
+                if (shiftRef.current) {
                     return;
                 }
 
-                cursorCtx.fillStyle = activeColor;
-
                 const x = (px % width) * PIXEL_SIZE;
                 const y = (py % height) * PIXEL_SIZE;
-                cursorCtx.fillRect(x, y, PIXEL_SIZE, PIXEL_SIZE);
+
+                if (primaryColor) {
+                    cursorCtx.fillStyle = primaryColor;
+                    cursorCtx.fillRect(x, y, PIXEL_SIZE, PIXEL_SIZE);
+                }
 
                 if (currentModifier) {
                     cursorCtx.fillStyle = "rgba(255,255,255,0.6)";
@@ -455,13 +453,14 @@ export function EditorPage() {
         event.preventDefault();
 
         if (event.button === 0) {
-            setPrimaryColor(color);
-        } else if (event.button === 2) {
-            setSecondaryColor(secondaryColor === color ? null : color);
+            if (primaryColor === color) {
+                setPrimaryColor(null);
+            } else {
+                setPrimaryColor(color);
+                const note = COLOR_TO_NOTE_MAP[color];
+                synths.at(-1).triggerAttackRelease(note, "8n");
+            }
         }
-
-        const note = COLOR_TO_NOTE_MAP[color];
-        synths.at(-1).triggerAttackRelease(note, "8n");
     };
 
     const onModifierClick = (event, mod) => {
@@ -539,7 +538,6 @@ export function EditorPage() {
                                     <ColorSwatch
                                         color={color}
                                         primary={color === primaryColor}
-                                        secondary={color === secondaryColor}
                                         onClick={(e) => onSwatchClick(e, color)}
                                         onContextMenu={(e) => onSwatchClick(e, color)}
                                         size={32}
