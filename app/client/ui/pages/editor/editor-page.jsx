@@ -76,20 +76,17 @@ const MOD_FUNC = {
 
 const pulse = keyframes`
     0% {
-        transform: translate(50%, 50%) scale(0.8);
+        transform: scale(0.8);
     }
     50% {
-        transform: translate(50%, 50%) scale(1.2);
+        transform: scale(1.2);
     }
     100% {
-        transform: translate(50%, 50%) scale(0.8);
+        transform: scale(0.8);
     }
 `;
 
 const Playhead = styled(Box)`
-    background: red;
-    border: 1px solid black;
-    border-radius: 100%;
     animation: ${pulse} 1s infinite ease-in-out;
 `;
 
@@ -495,14 +492,33 @@ export function EditorPage() {
                         {playheads.map((p, i) => (
                             <Playhead
                                 key={i}
-                                size={PIXEL_SIZE / 2}
+                                size={PIXEL_SIZE}
                                 position="absolute"
                                 style={{
                                     left: p.x * PIXEL_SIZE,
                                     top: p.y * PIXEL_SIZE,
                                     transition: `left ${transitionSec}s linear, top ${transitionSec}s linear`,
                                 }}
-                            />
+                            >
+                                {/* <svg width={PIXEL_SIZE} height={PIXEL_SIZE}>
+                                    <circle
+                                        cx={PIXEL_SIZE / 2}
+                                        cy={PIXEL_SIZE / 2}
+                                        r="4"
+                                        stroke="white"
+                                        fill="red"
+                                        strokeWidth="1"
+                                    />
+                                </svg> */}
+                                <svg viewBox="0 0 32 32" width={PIXEL_SIZE} height={PIXEL_SIZE}>
+                                    <polygon
+                                        points="16 8, 24 16, 16 24, 8 16"
+                                        fill={["yellow", "green", "blue", "red"][i]}
+                                        stroke="white"
+                                        strokeWidth="2"
+                                    />
+                                </svg>
+                            </Playhead>
                         ))}
                     </InstrumentOverlay>
                 </Box>
@@ -510,16 +526,26 @@ export function EditorPage() {
             <Flex p={2} gap={2} bg="gray.1" borderTop="base" justify="center">
                 <Flex gap={3} direction="column" align="center">
                     <Flex gap={2}>
+                        {instruments.map((s, i) => (
+                            <Flex key={i} gap={2} align="center">
+                                <IconButton
+                                    icon={
+                                        <svg viewBox="0 0 32 32" width="32" height="32">
+                                            <polygon
+                                                points="16 8, 24 16, 16 24, 8 16"
+                                                fill={["yellow", "green", "blue", "red"][i]}
+                                                stroke="white"
+                                                strokeWidth="2"
+                                            />
+                                        </svg>
+                                    }
+                                    variant={s.playing ? "primary" : "default"}
+                                    onClick={() => onInstrumentToggle(i)}
+                                />
+                            </Flex>
+                        ))}
                         <Button onClick={onRestartInstruments}>Restart</Button>
                         <Button onClick={onStopInstruments}>Stop</Button>
-                        {instruments.map((s, i) => (
-                            <IconButton
-                                key={i}
-                                icon={<>{i + 1}</>}
-                                variant={s.playing ? "primary" : "default"}
-                                onClick={() => onInstrumentToggle(i)}
-                            />
-                        ))}
                         <Button onClick={onStartInstruments}>Go</Button>
                     </Flex>
                     <Flex pt={36}>
