@@ -24,7 +24,7 @@ export function usePanner({
     initAtCenter,
     centerOffset = { x: 0, y: 0 },
     minZoom = 0.25,
-    maxZoom = 2.5,
+    maxZoom = 3,
     onUpdate,
 }) {
     const [isPanning, setIsPanning] = useState(false);

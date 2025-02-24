@@ -3,11 +3,13 @@ import { Grid, Flex, Box, Label, Button, IconButton, Slider, ColorSwatch, useCal
 import styled, { css, keyframes } from "styled-components";
 import * as Tone from "tone";
 
-import { useCanvasConfig, setPrimaryColor, setCurrentModifier } from "../../../stores";
+import { useCanvasConfig, setPrimaryColor, setCurrentModifier, setCurrentFlag } from "../../../stores";
 import { usePanner } from "../../../hooks";
 import { hexToRgb, rgbToHex } from "../../../utils/color-util";
 import { wrap } from "../../../utils/math-util";
 import { getPointsBetween } from "../../../utils/vec2-util";
+
+import { FlagIcon } from "./flag-icon";
 
 const CANVAS_WIDTH = 48;
 const CANVAS_HEIGHT = 32;
@@ -42,25 +44,25 @@ const COLOR_TO_NOTE_MAP = {
 };
 
 const MOD_TYPE = {
-    LEFT: 1,
-    RIGHT: 2,
+    ROTATE_LEFT: 1,
+    ROTATE_RIGHT: 2,
     BOUNCE: 3,
 };
 
 const MOD_TYPE_TO_CHAR = {
-    [MOD_TYPE.LEFT]: "L",
-    [MOD_TYPE.RIGHT]: "R",
+    [MOD_TYPE.ROTATE_LEFT]: "L",
+    [MOD_TYPE.ROTATE_RIGHT]: "R",
     [MOD_TYPE.BOUNCE]: "X",
 };
 
 const MOD_FUNC = {
-    [MOD_TYPE.LEFT]: {
+    [MOD_TYPE.ROTATE_LEFT]: {
         "1,0": { x: 0, y: -1 },
         "0,1": { x: 1, y: 0 },
         "-1,0": { x: 0, y: 1 },
         "0,-1": { x: -1, y: 0 },
     },
-    [MOD_TYPE.RIGHT]: {
+    [MOD_TYPE.ROTATE_RIGHT]: {
         "1,0": { x: 0, y: 1 },
         "0,1": { x: -1, y: 0 },
         "-1,0": { x: 0, y: -1 },
@@ -72,6 +74,13 @@ const MOD_FUNC = {
         "-1,0": { x: 1, y: 0 },
         "0,-1": { x: 0, y: 1 },
     },
+};
+
+const DIR_TO_ROTATION_MAP = {
+    "1,0": "rotate(0deg)",
+    "0,1": "rotate(90deg)",
+    "-1,0": "rotate(180deg)",
+    "0,-1": "rotate(-90deg)",
 };
 
 const pulse = keyframes`
@@ -87,7 +96,7 @@ const pulse = keyframes`
 `;
 
 const Playhead = styled(Box)`
-    animation: ${pulse} 1s infinite ease-in-out;
+    /* animation: ${pulse} 1s infinite ease-in-out; */
 `;
 
 const Canvas = styled.canvas`
@@ -142,21 +151,21 @@ export function EditorPage() {
     const cursorCanvas = useRef(null);
     const shiftRef = useRef(false);
 
-    const { primaryColor, currentModifier } = useCanvasConfig();
+    const { primaryColor, currentModifier, currentFlag } = useCanvasConfig();
     const [tempo, setTempo] = useState(120);
 
     const [playheads, setPlayheads] = useState([
-        { x: 0, y: 0, dx: 1, dy: 0 },
-        { x: 0, y: 2, dx: 1, dy: 0 },
-        { x: 0, y: 4, dx: 1, dy: 0 },
-        { x: 0, y: 6, dx: 1, dy: 0 },
+        { x: 2, y: 2, dx: 1, dy: 0 },
+        { x: 2, y: 4, dx: 1, dy: 0 },
+        { x: 2, y: 6, dx: 1, dy: 0 },
+        { x: 2, y: 8, dx: 1, dy: 0 },
     ]);
 
     const [instruments, setInstruments] = useState([
-        { playing: false, start: { x: 0, y: 0, dx: 1, dy: 0 } },
-        { playing: false, start: { x: 0, y: 2, dx: 1, dy: 0 } },
-        { playing: false, start: { x: 0, y: 4, dx: 1, dy: 0 } },
-        { playing: false, start: { x: 0, y: 6, dx: 1, dy: 0 } },
+        { playing: false, start: { x: 2, y: 2, dx: 1, dy: 0 } },
+        { playing: false, start: { x: 2, y: 4, dx: 1, dy: 0 } },
+        { playing: false, start: { x: 2, y: 6, dx: 1, dy: 0 } },
+        { playing: false, start: { x: 2, y: 8, dx: 1, dy: 0 } },
     ]);
 
     const [table, setTable] = useState(() => createSequenceTable(CANVAS_WIDTH, CANVAS_HEIGHT));
@@ -291,6 +300,14 @@ export function EditorPage() {
 
         const onMouseUp = (event) => {
             if (event.buttons === 0) {
+                if (buttonDown === 0) {
+                    const { currentFlag } = useCanvasConfig.getState();
+
+                    if (currentFlag !== null) {
+                        const pos = getPixelPosition(event);
+                        updateFlag(pos, currentFlag);
+                    }
+                }
                 if (buttonDown !== -1) {
                     setTable(textureClone);
                 }
@@ -308,6 +325,17 @@ export function EditorPage() {
             const x = Math.floor((event.clientX - rect.x) / (PIXEL_SIZE * panner.scale.current));
             const y = Math.floor((event.clientY - rect.y) / (PIXEL_SIZE * panner.scale.current));
             return [x, y];
+        };
+
+        const updateFlag = ([x, y], flag) => {
+            if (x >= 0 && y >= 0 && x < table.width && y < table.height) {
+                setInstruments((prevInstruments) => {
+                    return prevInstruments.map((s, i) => ({
+                        ...s,
+                        start: i === flag ? { ...s.start, x, y } : s.start,
+                    }));
+                });
+            }
         };
 
         const updateAt = (points) => {
@@ -397,7 +425,7 @@ export function EditorPage() {
             document.removeEventListener("keydown", onKeyChange);
             document.removeEventListener("keyup", onKeyChange);
         };
-    }, [table.data]);
+    }, [table]);
 
     useEffect(() => {
         const transport = Tone.getTransport();
@@ -421,7 +449,7 @@ export function EditorPage() {
 
     const onStopInstruments = () => {
         setInstruments((prevInstruments) => {
-            return prevInstruments.map((s, i) => ({
+            return prevInstruments.map((s) => ({
                 ...s,
                 playing: false,
             }));
@@ -430,7 +458,7 @@ export function EditorPage() {
 
     const onStartInstruments = () => {
         setInstruments((prevInstruments) => {
-            return prevInstruments.map((s, i) => ({
+            return prevInstruments.map((s) => ({
                 ...s,
                 playing: true,
             }));
@@ -470,6 +498,10 @@ export function EditorPage() {
         }
     };
 
+    const onFlagClick = (index) => {
+        setCurrentFlag(index);
+    };
+
     const onContextMenu = (event) => {
         event.preventDefault();
     };
@@ -489,6 +521,26 @@ export function EditorPage() {
                     <CursorCanvas ref={cursorCanvas} width={width} height={height} />
                     <GridOverlay width={width} height={height} />
                     <InstrumentOverlay width={width} height={height}>
+                        {instruments.map((n, i) => (
+                            <Box
+                                key={i}
+                                size={PIXEL_SIZE}
+                                position="absolute"
+                                style={{
+                                    left: n.start.x * PIXEL_SIZE,
+                                    top: n.start.y * PIXEL_SIZE,
+                                    transform: DIR_TO_ROTATION_MAP[`${n.start.dx},${n.start.dy}`],
+                                    filter: "drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.7))",
+                                }}
+                            >
+                                <FlagIcon
+                                    colorIndex={i}
+                                    width={PIXEL_SIZE}
+                                    height={PIXEL_SIZE}
+                                    style={{ transform: "translate(4.5px, -7.5px)" }}
+                                />
+                            </Box>
+                        ))}
                         {playheads.map((p, i) => (
                             <Playhead
                                 key={i}
@@ -498,24 +550,16 @@ export function EditorPage() {
                                     left: p.x * PIXEL_SIZE,
                                     top: p.y * PIXEL_SIZE,
                                     transition: `left ${transitionSec}s linear, top ${transitionSec}s linear`,
+                                    filter: "drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.7))",
                                 }}
                             >
-                                {/* <svg width={PIXEL_SIZE} height={PIXEL_SIZE}>
-                                    <circle
-                                        cx={PIXEL_SIZE / 2}
-                                        cy={PIXEL_SIZE / 2}
-                                        r="4"
-                                        stroke="white"
-                                        fill="red"
-                                        strokeWidth="1"
-                                    />
-                                </svg> */}
                                 <svg viewBox="0 0 32 32" width={PIXEL_SIZE} height={PIXEL_SIZE}>
                                     <polygon
                                         points="16 8, 24 16, 16 24, 8 16"
                                         fill={["yellow", "green", "blue", "red"][i]}
                                         stroke="white"
                                         strokeWidth="2"
+                                        strokeLinejoin="round"
                                     />
                                 </svg>
                             </Playhead>
@@ -530,12 +574,13 @@ export function EditorPage() {
                             <Flex key={i} gap={2} align="center">
                                 <IconButton
                                     icon={
-                                        <svg viewBox="0 0 32 32" width="32" height="32">
+                                        <svg viewBox="0 0 32 32" width="24" height="24">
                                             <polygon
                                                 points="16 8, 24 16, 16 24, 8 16"
                                                 fill={["yellow", "green", "blue", "red"][i]}
                                                 stroke="white"
                                                 strokeWidth="2"
+                                                strokeLinejoin="round"
                                             />
                                         </svg>
                                     }
@@ -544,9 +589,18 @@ export function EditorPage() {
                                 />
                             </Flex>
                         ))}
-                        <Button onClick={onRestartInstruments}>Restart</Button>
-                        <Button onClick={onStopInstruments}>Stop</Button>
                         <Button onClick={onStartInstruments}>Go</Button>
+                        <Button onClick={onStopInstruments}>Stop</Button>
+                        <Button onClick={onRestartInstruments}>Restart</Button>
+                        {instruments.map((s, i) => (
+                            <Flex key={i} gap={2} align="center">
+                                <IconButton
+                                    icon={<FlagIcon colorIndex={i} width="24" height="24" />}
+                                    variant={i === currentFlag ? "primary" : "default"}
+                                    onClick={() => onFlagClick(i)}
+                                />
+                            </Flex>
+                        ))}
                     </Flex>
                     <Flex pt={36}>
                         {Object.entries(COLOR_TO_NOTE_MAP).map(([color, note]) => (
