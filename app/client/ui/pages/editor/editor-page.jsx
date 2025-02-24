@@ -327,12 +327,20 @@ export function EditorPage() {
             return [x, y];
         };
 
+        const getNextStartPosition = (currentStart, x, y) => {
+            if (currentStart.x === x && currentStart.y === y) {
+                const dir = MOD_FUNC[MOD_TYPE.ROTATE_RIGHT][`${currentStart.dx},${currentStart.dy}`];
+                return { ...currentStart, x, y, dx: dir.x, dy: dir.y };
+            }
+            return { ...currentStart, x, y };
+        };
+
         const updateFlag = ([x, y], flag) => {
             if (x >= 0 && y >= 0 && x < table.width && y < table.height) {
                 setInstruments((prevInstruments) => {
                     return prevInstruments.map((s, i) => ({
                         ...s,
-                        start: i === flag ? { ...s.start, x, y } : s.start,
+                        start: i === flag ? getNextStartPosition(s.start, x, y) : s.start,
                     }));
                 });
             }
