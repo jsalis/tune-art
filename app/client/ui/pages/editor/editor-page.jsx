@@ -1,9 +1,16 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { Grid, Flex, Box, Label, Button, IconButton, Slider, ColorSwatch, useCallbackRef } from "londo-ui";
-import styled, { css, keyframes } from "styled-components";
+import styled, { css } from "styled-components";
 import * as Tone from "tone";
 
-import { useCanvasConfig, setPrimaryColor, setCurrentModifier, setCurrentFlag } from "../../../stores";
+import {
+    useCanvasConfig,
+    setPrimaryColor,
+    setCurrentModifier,
+    setCurrentFlag,
+    usePointer,
+    updatePointer,
+} from "../../../stores";
 import { usePanner } from "../../../hooks";
 import { hexToRgb, rgbToHex } from "../../../utils/color-util";
 import { wrap } from "../../../utils/math-util";
@@ -83,21 +90,7 @@ const DIR_TO_ROTATION_MAP = {
     "0,-1": "rotate(-90deg)",
 };
 
-const pulse = keyframes`
-    0% {
-        transform: scale(0.8);
-    }
-    50% {
-        transform: scale(1.2);
-    }
-    100% {
-        transform: scale(0.8);
-    }
-`;
-
-const Playhead = styled(Box)`
-    /* animation: ${pulse} 1s infinite ease-in-out; */
-`;
+const Playhead = styled(Box)``;
 
 const Canvas = styled.canvas`
     background-image: ${(p) => {
@@ -284,6 +277,7 @@ export function EditorPage() {
 
                 renderTexture();
                 renderCursor(pos);
+                updatePointer({ position: pos, mouseOver: true });
                 lastPosition = pos;
             }
 
@@ -295,6 +289,7 @@ export function EditorPage() {
         const onMouseLeave = () => {
             renderTexture();
             clearCursor();
+            updatePointer({ position: [0, 0], mouseOver: false });
             lastPosition = null;
         };
 
@@ -516,7 +511,7 @@ export function EditorPage() {
 
     return (
         <Grid columns="auto" rows="40px auto 200px" minWidth="512px" height="100vh">
-            <Flex bg="gray.1" borderBottom="base" justify="center" align="center"></Flex>
+            <InfoPanel />
             <Flex
                 ref={panner.ref}
                 position="relative"
@@ -597,9 +592,11 @@ export function EditorPage() {
                                 />
                             </Flex>
                         ))}
-                        <Button onClick={onStartInstruments}>Go</Button>
-                        <Button onClick={onStopInstruments}>Stop</Button>
-                        <Button onClick={onRestartInstruments}>Restart</Button>
+                        <Flex mx={2} gap={2}>
+                            <Button onClick={onStartInstruments}>Go</Button>
+                            <Button onClick={onStopInstruments}>Stop</Button>
+                            <Button onClick={onRestartInstruments}>Restart</Button>
+                        </Flex>
                         {instruments.map((s, i) => (
                             <Flex key={i} gap={2} align="center">
                                 <IconButton
@@ -679,6 +676,20 @@ export function EditorPage() {
                 </Flex>
             </Flex>
         </Grid>
+    );
+}
+
+function InfoPanel() {
+    const pointer = usePointer((s) => (s.mouseOver ? s.position.join(" ") : "--"));
+
+    return (
+        <Flex bg="gray.1" borderBottom="base" justify="center" align="center">
+            <Box whiteSpace="nowrap">
+                <Label px={2} minWidth={140}>
+                    Pointer: {pointer}
+                </Label>
+            </Box>
+        </Flex>
     );
 }
 
