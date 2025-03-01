@@ -332,6 +332,7 @@ export function EditorPage() {
 
         const updateFlag = ([x, y], flag) => {
             if (x >= 0 && y >= 0 && x < table.width && y < table.height) {
+                // TODO check for flag overlap
                 setInstruments((prevInstruments) => {
                     return prevInstruments.map((s, i) => ({
                         ...s,
@@ -344,10 +345,13 @@ export function EditorPage() {
         const updateAt = (points) => {
             if (buttonDown === 0) {
                 const { primaryColor, currentModifier } = useCanvasConfig.getState();
-                const rgb = !shiftRef.current && primaryColor ? hexToRgb(primaryColor) : null;
-                const rgba = rgb ? [rgb.r, rgb.g, rgb.b, 255] : [0, 0, 0, 0];
-                const mod = !shiftRef.current ? currentModifier : null;
-                setAllPixelColors(canvas.current, textureClone, points, rgba, mod);
+
+                if (primaryColor !== null || currentModifier !== null) {
+                    const rgb = !shiftRef.current && primaryColor ? hexToRgb(primaryColor) : null;
+                    const rgba = rgb ? [rgb.r, rgb.g, rgb.b, 255] : [0, 0, 0, 0];
+                    const mod = !shiftRef.current ? currentModifier : null;
+                    setAllPixelColors(canvas.current, textureClone, points, rgba, mod);
+                }
             }
         };
 
