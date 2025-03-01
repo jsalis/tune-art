@@ -177,17 +177,13 @@ export function EditorPage() {
                 return p;
             }
 
-            const index = getPixelIndex(table, p.x, p.y);
+            const x = wrap(p.x + p.dx, 0, table.width - 1);
+            const y = wrap(p.y + p.dy, 0, table.height - 1);
+            const index = getPixelIndex(table, x, y);
             const { mod } = table.data[index];
             const dir = mod ? MOD_FUNC[mod][`${p.dx},${p.dy}`] : { x: p.dx, y: p.dy };
 
-            return {
-                ...p,
-                x: wrap(p.x + dir.x, 0, table.width - 1),
-                y: wrap(p.y + dir.y, 0, table.height - 1),
-                dx: dir.x,
-                dy: dir.y,
-            };
+            return { ...p, x, y, dx: dir.x, dy: dir.y };
         });
 
         nextPlayheads.forEach((p, i) => {
