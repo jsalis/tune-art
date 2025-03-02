@@ -1,25 +1,44 @@
 import { useState, useRef, useMemo, useEffect } from "react";
-import { Grid, Flex, Box, Label, Button, IconButton, Slider, ColorSwatch, useCallbackRef } from "londo-ui";
+import {
+    Grid,
+    Flex,
+    Box,
+    Label,
+    Button,
+    IconButton,
+    Slider,
+    ColorSwatch,
+    UndoIcon,
+    RedoIcon,
+    useCallbackRef,
+    useHotKey,
+} from "londo-ui";
+import { applyPatches } from "immer";
 import styled, { css } from "styled-components";
 import * as Tone from "tone";
 
 import {
-    useCanvasConfig,
+    useStageData,
+    updateStageData,
+    useStageConfig,
     setPrimaryColor,
     setCurrentModifier,
     setCurrentFlag,
-    usePointer,
     updatePointer,
+    usePatches,
+    useUndoDepth,
+    useRedoDepth,
+    undoChange,
+    redoChange,
 } from "../../../stores";
 import { usePanner } from "../../../hooks";
 import { hexToRgb, rgbToHex } from "../../../utils/color-util";
 import { wrap } from "../../../utils/math-util";
 import { getPointsBetween } from "../../../utils/vec2-util";
 
+import { InfoPanel } from "./info-panel";
 import { FlagIcon } from "./flag-icon";
 
-const CANVAS_WIDTH = 48;
-const CANVAS_HEIGHT = 32;
 const PIXEL_SIZE = 16;
 
 const COLOR_TO_NOTE_MAP = {
@@ -90,8 +109,6 @@ const DIR_TO_ROTATION_MAP = {
     "0,-1": "rotate(-90deg)",
 };
 
-const Playhead = styled(Box)``;
-
 const Canvas = styled.canvas`
     background-image: ${(p) => {
         const c1 = p.theme.colors.gray[1];
@@ -140,11 +157,23 @@ const GridOverlay = styled.div`
 
 export function EditorPage() {
     const contentRef = useRef(null);
-    const canvas = useRef(null);
-    const cursorCanvas = useRef(null);
+    const canvasRef = useRef(null);
+    const cursorCanvasRef = useRef(null);
     const shiftRef = useRef(false);
 
-    const { primaryColor, currentModifier, currentFlag } = useCanvasConfig();
+    const undoDepth = useUndoDepth();
+    const redoDepth = useRedoDepth();
+
+    useHotKey("ctrl+z", () => undoChange());
+    useHotKey("shift+ctrl+z", () => redoChange());
+
+    usePatches((patches, action) => {
+        if (action !== "push") {
+            useStageData.setState((s) => applyPatches(s, patches));
+        }
+    });
+
+    const { primaryColor, currentModifier, currentFlag } = useStageConfig();
     const [tempo, setTempo] = useState(120);
 
     const [playheads, setPlayheads] = useState([
@@ -161,11 +190,11 @@ export function EditorPage() {
         { playing: false, start: { x: 2, y: 8, dx: 1, dy: 0 } },
     ]);
 
-    const [table, setTable] = useState(() => createSequenceTable(CANVAS_WIDTH, CANVAS_HEIGHT));
+    const stage = useStageData();
     const synths = useMemo(() => createSynths(5), []);
 
-    const width = table.width * PIXEL_SIZE;
-    const height = table.height * PIXEL_SIZE;
+    const width = stage.width * PIXEL_SIZE;
+    const height = stage.height * PIXEL_SIZE;
 
     const transitionSec = useMemo(() => {
         return 1 / ((tempo * 2) / 60);
@@ -177,10 +206,10 @@ export function EditorPage() {
                 return p;
             }
 
-            const x = wrap(p.x + p.dx, 0, table.width - 1);
-            const y = wrap(p.y + p.dy, 0, table.height - 1);
-            const index = getPixelIndex(table, x, y);
-            const { mod } = table.data[index];
+            const x = wrap(p.x + p.dx, 0, stage.width - 1);
+            const y = wrap(p.y + p.dy, 0, stage.height - 1);
+            const index = getPixelIndex(stage, x, y);
+            const { mod } = stage.data[index];
             const dir = mod ? MOD_FUNC[mod][`${p.dx},${p.dy}`] : { x: p.dx, y: p.dy };
 
             return { ...p, x, y, dx: dir.x, dy: dir.y };
@@ -192,8 +221,8 @@ export function EditorPage() {
             }
 
             const synth = synths[i];
-            const index = getPixelIndex(table, p.x, p.y);
-            const pixel = table.data[index];
+            const index = getPixelIndex(stage, p.x, p.y);
+            const pixel = stage.data[index];
 
             if (pixel.color[3] > 0) {
                 const hex = rgbToHex(...pixel.color);
@@ -234,9 +263,9 @@ export function EditorPage() {
     });
 
     useEffect(() => {
-        const ctx = canvas.current.getContext("2d");
-        const cursorCtx = cursorCanvas.current.getContext("2d");
-        const textureClone = { ...table, data: table.data.slice(0) };
+        const ctx = canvasRef.current.getContext("2d");
+        const cursorCtx = cursorCanvasRef.current.getContext("2d");
+        const stageClone = { ...stage, data: stage.data.slice(0) };
 
         let buttonDown = -1;
         let lastPosition = null;
@@ -292,7 +321,7 @@ export function EditorPage() {
         const onMouseUp = (event) => {
             if (event.buttons === 0) {
                 if (buttonDown === 0) {
-                    const { currentFlag } = useCanvasConfig.getState();
+                    const { currentFlag } = useStageConfig.getState();
 
                     if (currentFlag !== null) {
                         const pos = getPixelPosition(event);
@@ -300,7 +329,7 @@ export function EditorPage() {
                     }
                 }
                 if (buttonDown !== -1) {
-                    setTable(textureClone);
+                    updateStageData(stageClone);
                 }
                 buttonDown = -1;
                 lastPosition = null;
@@ -312,7 +341,7 @@ export function EditorPage() {
         };
 
         const getPixelPosition = (event) => {
-            const rect = canvas.current.getBoundingClientRect();
+            const rect = canvasRef.current.getBoundingClientRect();
             const x = Math.floor((event.clientX - rect.x) / (PIXEL_SIZE * panner.scale.current));
             const y = Math.floor((event.clientY - rect.y) / (PIXEL_SIZE * panner.scale.current));
             return [x, y];
@@ -327,7 +356,7 @@ export function EditorPage() {
         };
 
         const updateFlag = ([x, y], flag) => {
-            if (x >= 0 && y >= 0 && x < table.width && y < table.height) {
+            if (x >= 0 && y >= 0 && x < stage.width && y < stage.height) {
                 // TODO check for flag overlap
                 setInstruments((prevInstruments) => {
                     return prevInstruments.map((s, i) => ({
@@ -340,24 +369,24 @@ export function EditorPage() {
 
         const updateAt = (points) => {
             if (buttonDown === 0) {
-                const { primaryColor, currentModifier } = useCanvasConfig.getState();
+                const { primaryColor, currentModifier } = useStageConfig.getState();
 
                 if (primaryColor !== null || currentModifier !== null) {
                     const rgb = !shiftRef.current && primaryColor ? hexToRgb(primaryColor) : null;
                     const rgba = rgb ? [rgb.r, rgb.g, rgb.b, 255] : [0, 0, 0, 0];
                     const mod = !shiftRef.current ? currentModifier : null;
-                    setAllPixelColors(canvas.current, textureClone, points, rgba, mod);
+                    setAllPixelColors(canvasRef.current, stageClone, points, rgba, mod);
                 }
             }
         };
 
         const renderTexture = () => {
-            ctx.clearRect(0, 0, canvas.current.width, canvas.current.height);
-            const { data, width, height } = textureClone;
+            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+            const { data, width, height } = stageClone;
 
             for (let px = 0; px < width; px++) {
                 for (let py = 0; py < height; py++) {
-                    const i = getPixelIndex(textureClone, px, py);
+                    const i = getPixelIndex(stageClone, px, py);
                     const { color, mod } = data[i];
                     const [r, g, b, a] = color;
                     ctx.fillStyle = `rgba(${r},${g},${b},${a / 255})`;
@@ -376,16 +405,16 @@ export function EditorPage() {
         };
 
         const renderCursor = ([px, py]) => {
-            cursorCtx.clearRect(0, 0, cursorCanvas.current.width, cursorCanvas.current.height);
+            cursorCtx.clearRect(0, 0, cursorCanvasRef.current.width, cursorCanvasRef.current.height);
 
             if (
                 px >= 0 &&
                 py >= 0 &&
-                px < canvas.current.width / PIXEL_SIZE &&
-                py < canvas.current.height / PIXEL_SIZE
+                px < canvasRef.current.width / PIXEL_SIZE &&
+                py < canvasRef.current.height / PIXEL_SIZE
             ) {
-                const { width, height } = textureClone;
-                const { primaryColor, currentModifier } = useCanvasConfig.getState();
+                const { width, height } = stageClone;
+                const { primaryColor, currentModifier } = useStageConfig.getState();
 
                 if (shiftRef.current) {
                     return;
@@ -408,7 +437,7 @@ export function EditorPage() {
         };
 
         const clearCursor = () => {
-            cursorCtx.clearRect(0, 0, cursorCanvas.current.width, cursorCanvas.current.height);
+            cursorCtx.clearRect(0, 0, cursorCanvasRef.current.width, cursorCanvasRef.current.height);
         };
 
         renderTexture();
@@ -428,7 +457,7 @@ export function EditorPage() {
             document.removeEventListener("keydown", onKeyChange);
             document.removeEventListener("keyup", onKeyChange);
         };
-    }, [table]);
+    }, [stage]);
 
     useEffect(() => {
         const transport = Tone.getTransport();
@@ -520,8 +549,8 @@ export function EditorPage() {
                 onContextMenu={onContextMenu}
             >
                 <Box ref={contentRef} position="absolute" userSelect="none">
-                    <Canvas ref={canvas} width={width} height={height} />
-                    <CursorCanvas ref={cursorCanvas} width={width} height={height} />
+                    <Canvas ref={canvasRef} width={width} height={height} />
+                    <CursorCanvas ref={cursorCanvasRef} width={width} height={height} />
                     <GridOverlay width={width} height={height} />
                     <InstrumentOverlay width={width} height={height}>
                         {instruments.map((n, i) => (
@@ -545,7 +574,7 @@ export function EditorPage() {
                             </Box>
                         ))}
                         {playheads.map((p, i) => (
-                            <Playhead
+                            <Box
                                 key={i}
                                 size={PIXEL_SIZE}
                                 position="absolute"
@@ -565,7 +594,7 @@ export function EditorPage() {
                                         strokeLinejoin="round"
                                     />
                                 </svg>
-                            </Playhead>
+                            </Box>
                         ))}
                     </InstrumentOverlay>
                 </Box>
@@ -606,6 +635,18 @@ export function EditorPage() {
                                 />
                             </Flex>
                         ))}
+                        <Flex mx={2} gap={2}>
+                            <IconButton
+                                icon={<UndoIcon />}
+                                disabled={undoDepth === 0}
+                                onClick={() => undoChange()}
+                            />
+                            <IconButton
+                                icon={<RedoIcon />}
+                                disabled={redoDepth === 0}
+                                onClick={() => redoChange()}
+                            />
+                        </Flex>
                     </Flex>
                     <Flex pt={36}>
                         {Object.entries(COLOR_TO_NOTE_MAP).map(([color, note]) => (
@@ -679,20 +720,6 @@ export function EditorPage() {
     );
 }
 
-function InfoPanel() {
-    const pointer = usePointer((s) => (s.mouseOver ? s.position.join(" ") : "--"));
-
-    return (
-        <Flex bg="gray.1" borderBottom="base" justify="center" align="center">
-            <Box whiteSpace="nowrap">
-                <Label px={2} minWidth={140}>
-                    Pointer: {pointer}
-                </Label>
-            </Box>
-        </Flex>
-    );
-}
-
 function createSynths(count) {
     const synths = [];
 
@@ -702,24 +729,6 @@ function createSynths(count) {
     }
 
     return synths;
-}
-
-function createSequenceTable(width, height) {
-    const data = [];
-    const colors = Object.keys(COLOR_TO_NOTE_MAP);
-
-    for (let i = 0; i < height; i++) {
-        for (let j = 0; j < width; j++) {
-            const hex = colors[Math.floor(Math.random() * colors.length)];
-            const rgb = hexToRgb(hex);
-            data.push({
-                color: [rgb.r, rgb.g, rgb.b, Math.random() < 0 ? 255 : 0],
-                mod: null,
-            });
-        }
-    }
-
-    return { width, height, data };
 }
 
 function getPixelIndex(image, px, py) {
