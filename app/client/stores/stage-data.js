@@ -22,6 +22,19 @@ const defaultState = createStageData(STAGE_WIDTH, STAGE_HEIGHT);
 
 export const useStageData = createStore(defaultState);
 
+export function clearStageData() {
+    useStageData.setState(
+        (state) => {
+            state.width = defaultState.width;
+            state.height = defaultState.height;
+            state.data = defaultState.data;
+        },
+        (patches, inversePatches) => {
+            pushChange({ patches, inversePatches });
+        },
+    );
+}
+
 export function updateStageData(payload) {
     useStageData.setState(
         (state) => {

@@ -8,8 +8,10 @@ import {
     IconButton,
     Slider,
     ColorSwatch,
+    Popconfirm,
     UndoIcon,
     RedoIcon,
+    TrashIcon,
     useCallbackRef,
     useHotKey,
 } from "londo-ui";
@@ -19,6 +21,7 @@ import * as Tone from "tone";
 
 import {
     useStageData,
+    clearStageData,
     updateStageData,
     useStageConfig,
     setPrimaryColor,
@@ -534,6 +537,10 @@ export function EditorPage() {
         setCurrentFlag(index);
     };
 
+    const onClearStage = () => {
+        clearStageData();
+    };
+
     const onContextMenu = (event) => {
         event.preventDefault();
     };
@@ -637,16 +644,27 @@ export function EditorPage() {
                         ))}
                         <Flex mx={2} gap={2}>
                             <IconButton
+                                aria-label="Undo"
                                 icon={<UndoIcon />}
                                 disabled={undoDepth === 0}
                                 onClick={() => undoChange()}
                             />
                             <IconButton
+                                aria-label="Redo"
                                 icon={<RedoIcon />}
                                 disabled={redoDepth === 0}
                                 onClick={() => redoChange()}
                             />
                         </Flex>
+                        <Popconfirm
+                            placement="top"
+                            title="Clear the stage?"
+                            okVariant="danger"
+                            okText="Clear"
+                            onConfirm={onClearStage}
+                        >
+                            <IconButton aria-label="Clear" icon={<TrashIcon />} />
+                        </Popconfirm>
                     </Flex>
                     <Flex pt={36}>
                         {Object.entries(COLOR_TO_NOTE_MAP).map(([color, note]) => (
