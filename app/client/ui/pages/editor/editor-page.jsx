@@ -21,8 +21,8 @@ import * as Tone from "tone";
 
 import {
     useStageData,
-    clearStageData,
-    updateStageData,
+    clearStageGrid,
+    setStageGrid,
     setStartFlag,
     useStageConfig,
     setPrimaryColor,
@@ -273,6 +273,7 @@ export function EditorPage() {
 
         let buttonDown = -1;
         let lastPosition = null;
+        let hasGridChanges = false;
 
         const onKeyChange = (event) => {
             if (shiftRef.current !== event.shiftKey) {
@@ -332,11 +333,12 @@ export function EditorPage() {
                         updateFlag(pos, currentFlag);
                     }
                 }
-                if (buttonDown !== -1) {
-                    updateStageData(stageClone);
+                if (hasGridChanges) {
+                    setStageGrid(stageClone);
                 }
                 buttonDown = -1;
                 lastPosition = null;
+                hasGridChanges = false;
             }
         };
 
@@ -384,6 +386,7 @@ export function EditorPage() {
                     const rgba = rgb ? [rgb.r, rgb.g, rgb.b, 255] : [0, 0, 0, 0];
                     const mod = !shiftRef.current ? currentModifier : null;
                     setAllPixelColors(canvasRef.current, stageClone, points, rgba, mod);
+                    hasGridChanges = true;
                 }
             }
         };
@@ -543,7 +546,7 @@ export function EditorPage() {
     };
 
     const onClearStage = () => {
-        clearStageData();
+        clearStageGrid();
     };
 
     const onContextMenu = (event) => {
