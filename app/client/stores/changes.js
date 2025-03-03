@@ -10,11 +10,11 @@ export const useChanges = createStore({
 });
 
 export function useUndoDepth() {
-    return useChanges((s) => s.prev.length ?? 0);
+    return useChanges((s) => s.prev.length);
 }
 
 export function useRedoDepth() {
-    return useChanges((s) => s.next.length ?? 0);
+    return useChanges((s) => s.next.length);
 }
 
 export function usePatches(listener) {

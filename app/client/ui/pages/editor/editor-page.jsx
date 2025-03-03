@@ -23,6 +23,7 @@ import {
     useStageData,
     clearStageData,
     updateStageData,
+    setStartFlag,
     useStageConfig,
     setPrimaryColor,
     setCurrentModifier,
@@ -180,17 +181,17 @@ export function EditorPage() {
     const [tempo, setTempo] = useState(120);
 
     const [playheads, setPlayheads] = useState([
-        { x: 2, y: 2, dx: 1, dy: 0 },
-        { x: 2, y: 4, dx: 1, dy: 0 },
-        { x: 2, y: 6, dx: 1, dy: 0 },
-        { x: 2, y: 8, dx: 1, dy: 0 },
+        { x: 1, y: 1, dx: 1, dy: 0 },
+        { x: 1, y: 3, dx: 1, dy: 0 },
+        { x: 1, y: 5, dx: 1, dy: 0 },
+        { x: 1, y: 7, dx: 1, dy: 0 },
     ]);
 
     const [instruments, setInstruments] = useState([
-        { playing: false, start: { x: 2, y: 2, dx: 1, dy: 0 } },
-        { playing: false, start: { x: 2, y: 4, dx: 1, dy: 0 } },
-        { playing: false, start: { x: 2, y: 6, dx: 1, dy: 0 } },
-        { playing: false, start: { x: 2, y: 8, dx: 1, dy: 0 } },
+        { playing: false },
+        { playing: false },
+        { playing: false },
+        { playing: false },
     ]);
 
     const stage = useStageData();
@@ -360,13 +361,17 @@ export function EditorPage() {
 
         const updateFlag = ([x, y], flag) => {
             if (x >= 0 && y >= 0 && x < stage.width && y < stage.height) {
-                // TODO check for flag overlap
-                setInstruments((prevInstruments) => {
-                    return prevInstruments.map((s, i) => ({
-                        ...s,
-                        start: i === flag ? getNextStartPosition(s.start, x, y) : s.start,
-                    }));
-                });
+                const start = getNextStartPosition(stage.startFlags[flag], x, y);
+
+                for (let i = 0; i < stage.startFlags.length; i++) {
+                    const f = stage.startFlags[i];
+
+                    if (i !== flag && f.x === start.x && f.y === start.y) {
+                        return;
+                    }
+                }
+
+                setStartFlag(flag, start);
             }
         };
 
@@ -504,7 +509,7 @@ export function EditorPage() {
         setPlayheads((prevPlayheads) => {
             return prevPlayheads.map((p, i) => ({
                 ...p,
-                ...instruments[i].start,
+                ...stage.startFlags[i],
             }));
         });
     };
@@ -560,15 +565,15 @@ export function EditorPage() {
                     <CursorCanvas ref={cursorCanvasRef} width={width} height={height} />
                     <GridOverlay width={width} height={height} />
                     <InstrumentOverlay width={width} height={height}>
-                        {instruments.map((n, i) => (
+                        {stage.startFlags.map((f, i) => (
                             <Box
                                 key={i}
                                 size={PIXEL_SIZE}
                                 position="absolute"
                                 style={{
-                                    left: n.start.x * PIXEL_SIZE,
-                                    top: n.start.y * PIXEL_SIZE,
-                                    transform: DIR_TO_ROTATION_MAP[`${n.start.dx},${n.start.dy}`],
+                                    left: f.x * PIXEL_SIZE,
+                                    top: f.y * PIXEL_SIZE,
+                                    transform: DIR_TO_ROTATION_MAP[`${f.dx},${f.dy}`],
                                     filter: "drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.7))",
                                 }}
                             >
